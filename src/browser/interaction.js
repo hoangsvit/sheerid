@@ -1,11 +1,11 @@
 import { randomInt } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
-// 随机整数
+// Random integer
 const sample = range =>
   randomInt(range.min, range.max + 1);
 
-// 延迟范围校验
+// Validate delay ranges
 function validateRange(name, range) {
   if (
     !range ||
@@ -22,7 +22,7 @@ export function createInteraction(
   config,
   { signal, log = () => {} } = {}
 ) {
-  // 检查配置
+  // Validate configuration
   for (const key of [
     'fieldDelayMs',
     'submitDelayMs',
@@ -31,12 +31,12 @@ export function createInteraction(
     validateRange(key, config[key]);
   }
 
-  // 中断检查
+  // Check cancellation
   const checkAbort = () => {
     signal?.throwIfAborted();
   };
 
-  // 统一随机等待
+  // Shared randomized wait
   const pause = async (range, stage, field) => {
     checkAbort();
 
@@ -55,19 +55,19 @@ export function createInteraction(
 
   return {
 
-    // 字段操作之前等待
+    // Wait before field actions
     beforeField: field =>
       pause(config.fieldDelayMs, 'fill', field),
 
-    // 下拉选项操作之前等待
+    // Wait before dropdown actions
     beforeOption: field =>
       pause(config.fieldDelayMs, 'select_option', field),
 
-    // 提交之前等待
+    // Wait before submitting
     beforeSubmit: () =>
       pause(config.submitDelayMs, 'submit', 'submit'),
 
-    // 随机键盘输入
+    // Keyboard input with randomized delays
     async typeText(locator, value, options = {}) {
       const {
         field = 'input',
@@ -77,10 +77,10 @@ export function createInteraction(
 
       checkAbort();
 
-      // 只聚焦；重复点击会关闭调用方已经打开的下拉菜单。
+      // Focus only; repeated clicking can close an already-open dropdown.
       await locator.focus();
 
-      // 默认沿用 fill 清空方式，避免快捷键改变下拉控件状态。
+      // Clear via fill by default to avoid keyboard shortcuts changing dropdown state.
       if (clear) {
         if (clearMode === 'keyboard') {
           await locator.press('ControlOrMeta+A');
@@ -92,7 +92,7 @@ export function createInteraction(
         }
       }
 
-      // 按 Unicode 字符遍历
+      // Iterate over Unicode characters
       const characters = Array.from(
         String(value ?? '').replace(/\r\n?/g, '\n')
       );
@@ -102,14 +102,14 @@ export function createInteraction(
 
         const character = characters[i];
 
-        // 输入当前字符
+        // Type the current character
         if (character === '\n') {
           await locator.press('Enter');
         } else {
           await locator.pressSequentially(character);
         }
 
-        // 每个字符之间随机等待
+        // Randomized wait between characters
         if (i < characters.length - 1) {
           await pause(
             config.keyDelayMs,

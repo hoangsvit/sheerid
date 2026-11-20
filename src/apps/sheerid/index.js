@@ -29,7 +29,7 @@ export const sheerid = {
     const date = config.data.birthDate;
     requireValue(typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date), 'birthDate must use YYYY-MM-DD');
     const timestamp = Date.parse(`${date}T00:00:00Z`);
-    requireValue(Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === date && timestamp < Date.now() && Number(date.slice(0, 4)) >= 1900, 'birthDate 不是有效的出生日期');
+    requireValue(Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === date && timestamp < Date.now() && Number(date.slice(0, 4)) >= 1900, 'birthDate is not a valid date of birth');
     checkKeys(config.data.organization, ['name', 'optionText', 'emailDomain'], 'organization');
     for (const key of ['name', 'optionText']) {
       requireValue(typeof config.data.organization[key] === 'string' && config.data.organization[key].trim().length > 0, `Provide organization.${key}`);

@@ -48,7 +48,7 @@ export async function loadConfig(filename, env = process.env) {
 
 // Both the CLI file loader and the local Web form use the same validation.
 export async function normalizeConfig(raw, env = process.env) {
-  checkKeys(raw, ['app', 'url', 'proxy', 'browser', 'timeouts', 'interaction', 'document', 'data', 'selectors', 'artifactsDir', 'web', 'polling', 'emailDomain'], '配置');
+  checkKeys(raw, ['app', 'url', 'proxy', 'browser', 'timeouts', 'interaction', 'document', 'data', 'selectors', 'artifactsDir', 'web', 'polling', 'emailDomain'], 'configuration');
   const web = normalizeWebConfig(raw.web);
   const polling = raw.polling ?? {};
   const rawDomain = raw.data?.organization?.emailDomain ?? raw.emailDomain ?? raw.data?.emailDomain;

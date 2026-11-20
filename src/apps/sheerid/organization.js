@@ -1,5 +1,5 @@
 // Observed SheerID behavior: selection replaces #sid-college-name with a readonly
-// textbox named School/学校 and a neighboring Clear selection button.
+// A textbox named School (including localized labels) and a neighboring Clear selection button.
 export async function organizationIsSelected(page, { labels, timeoutMs }) {
   const selected = page.getByRole('textbox', { name: /^(?:学校|學校|School|College|University)$/i })
     .filter({ visible: true });
