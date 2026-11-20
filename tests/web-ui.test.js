@@ -25,7 +25,7 @@ test('Web UI deletes failed jobs, allows resubmission and preserves a different 
       return { status: 'cancelled' };
     }
     attempts++;
-    throw new AutomationError('API_NETWORK_ERROR', '接口请求失败');
+    throw new AutomationError('API_NETWORK_ERROR', 'API request failed');
   } });
   const origin = await app.start();
   t.after(() => app.close());
@@ -46,26 +46,26 @@ test('Web UI deletes failed jobs, allows resubmission and preserves a different 
   await page.locator('[name=lastName]').fill('Student');
   await page.locator('[name=birthDate]').fill('2000-01-02');
   await page.locator('#start').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '执行失败');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Failed');
   assert.equal(await page.locator('#delete').isVisible(), true);
   const path = `${origin}/api/jobs/${id}`;
   await page.route(path, route => route.fulfill({ status: 409, contentType: 'application/json',
-    body: JSON.stringify({ error: { message: '请等待资源清理完成后再删除' } }) }));
+    body: JSON.stringify({ error: { message: 'Wait until resource cleanup finishes before deleting' } }) }));
   await page.locator('#delete').click();
   await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('清理完成'));
   assert.equal(app.jobs.jobs.has(id), true, 'a rejected deletion keeps the task');
   await page.unroute(path);
   await page.locator('#delete').click();
   await page.waitForFunction(() => document.querySelectorAll('#jobs button').length === 0
-    && document.querySelector('#job-state').textContent === '待开始');
+    && document.querySelector('#job-state').textContent === 'Not started');
   assert.equal(await page.locator('#selected-job').innerText(), '');
-  assert.equal(await page.locator('#log-count').innerText(), '0 条');
+  assert.equal(await page.locator('#log-count').innerText(), '0 events');
   assert.equal(await page.locator('#logs .empty').count(), 1);
   assert.equal(await page.locator('#delete').isVisible(), false);
   assert.equal(await page.evaluate(() => sessionStorage.getItem('one-selected-job')), null);
   assert.equal(await page.locator('[name=url]').inputValue(), url);
   await page.locator('#start').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '执行失败');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Failed');
   assert.equal(attempts, 2, 'the same verification ID runs again after explicit deletion');
   await mkdir(resolve('.runs/web-preview'), { recursive: true });
   await page.screenshot({ path: resolve('.runs/web-preview/delete-failed-mobile.png'), fullPage: true });
@@ -89,9 +89,9 @@ test('Web UI deletes failed jobs, allows resubmission and preserves a different 
   assert.equal(await page.locator('#delete').isVisible(), false);
   assert.equal(app.jobs.get(runningId).job.state, 'running');
   await page.locator('#cancel').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '已停止');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Stopped');
   await page.locator('#delete').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '待开始');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Not started');
   assert.equal(app.jobs.jobs.size, 0);
   assert.deepEqual(errors, []);
 });
@@ -108,7 +108,7 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
       log('stage_started', { stage: 'preflight' });
       log('status_query_retry', { stage: 'preflight', code: 'API_NETWORK_ERROR' });
       log('status_query_retry', { stage: 'preflight', code: 'API_NETWORK_ERROR' });
-      throw new AutomationError('API_NETWORK_ERROR', '接口请求失败');
+      throw new AutomationError('API_NETWORK_ERROR', 'API request failed');
     }
     log('stage_started', { stage: 'launch' });
     log('stage_started', { stage: 'wait_ready' });
@@ -142,7 +142,7 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
     if (request.method() === 'GET' && new URL(request.url()).pathname.startsWith('/api/jobs')) reads.push(request.url());
   });
   async function expectIdle() {
-    await page.waitForFunction(() => document.querySelector('#queue-summary').textContent === '运行 0 / 1 · 等待 0');
+    await page.waitForFunction(() => document.querySelector('#queue-summary').textContent === 'Running 0 / 1 · Queued 0');
     // Allow the final log read to settle, then observe several former poll cycles.
     await page.waitForTimeout(1200);
     const count = reads.length;
@@ -151,11 +151,11 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   }
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
-  await page.waitForFunction(() => document.querySelector('#connection').textContent === '请输入访问密码');
+  await page.waitForFunction(() => document.querySelector('#connection').textContent === 'Enter access password');
   assert.equal(await page.locator('[name=password]').inputValue(), '');
   await page.locator('[name=password]').fill('wrong-password');
   await page.locator('[name=password]').blur();
-  await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('正确的访问密码'));
+  await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('正确的Access password'));
   assert.equal(app.jobs.jobs.size, 0);
   await page.locator('[name=password]').fill('JenkinWoo');
   await page.locator('[name=password]').blur();
@@ -173,15 +173,15 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   await mkdir(resolve('.runs/web-preview'), { recursive: true });
   await page.screenshot({ path: resolve('.runs/web-preview/desktop.png'), fullPage: true });
   await page.locator('#start').click();
-  await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('验证失败'));
+  await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('Verification failed'));
   assert.equal(await page.locator('.status-box, #stage, #outcome, #result-detail').count(), 0);
   assert.doesNotMatch(await page.locator('#logs').innerText(), /interaction_delay|field_filled|VERIFICATION_UNAVAILABLE|wait_submit|启动浏览器|等待页面就绪|无法继续验证/);
   assert.deepEqual(await page.locator('#logs li').evaluateAll(items => items.map(item => item.lastChild.textContent)),
-    ['已加入队列', '检查当前状态', '准备提交资料中', '提交资料中', '等待上传文件', '文件已上传', '等待审核', '验证失败']);
-  assert.equal(await page.locator('#logs li').filter({ hasText: '验证失败' }).count(), 1);
+    ['Added to queue', 'Checking current status', 'Preparing information', 'Submitting information', 'Waiting for document upload', 'Document uploaded', 'Awaiting review', 'Verification failed']);
+  assert.equal(await page.locator('#logs li').filter({ hasText: 'Verification failed' }).count(), 1);
   const visibleLogCount = await page.locator('#logs li').count();
   assert.ok(visibleLogCount < 10);
-  assert.equal(await page.locator('#log-count').innerText(), `${visibleLogCount} 条`);
+  assert.equal(await page.locator('#log-count').innerText(), `${visibleLogCount} events`);
   assert.equal(received.data.organization.optionText, 'Example University');
   assert.equal(received.data.birthDate, '2000-01-02');
   assert.equal(received.data.email, 'test.student@example.edu');
@@ -189,13 +189,13 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   assert.equal(await page.locator('[name=url]').isDisabled(), false);
   await page.locator('[name=url]').fill(url.replace('bbbbbbbbbbbbbbbbbbbbbbbb', 'cccccccccccccccccccccccc'));
   await page.locator('#start').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '排队中');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Queued');
   await page.waitForFunction(() => document.querySelectorAll('#jobs button').length === 2);
   await page.screenshot({ path: resolve('.runs/web-preview/desktop.png'), fullPage: true });
   await page.reload();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '排队中');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Queued');
   await page.locator('#cancel').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '已停止');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Stopped');
   assert.equal(app.jobs.get('bbbbbbbbbbbbbbbbbbbbbbbb').job.state, 'running');
   assert.equal(app.jobs.get('cccccccccccccccccccccccc').job.startedAt, null);
   await page.waitForTimeout(1200);
@@ -205,29 +205,29 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   assert.equal(reads.filter(url => url.includes('/cccccccccccccccccccccccc?')).length, stoppedReads);
   assert.ok(reads.filter(url => url.endsWith('/api/jobs')).length > queueReads, 'other active tasks still update');
   await page.locator('#resume').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '排队中');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Queued');
   assert.equal(await page.locator('#resume').isVisible(), false);
   assert.equal(app.jobs.jobs.size, 2);
   await page.reload();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '排队中');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Queued');
   await page.locator('#cancel').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '已停止');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Stopped');
   assert.equal(await page.locator('#resume').isVisible(), true);
-  assert.match(await page.locator('#logs').innerText(), /任务已恢复/);
+  assert.match(await page.locator('#logs').innerText(), /Task resumed/);
   await page.locator('[data-job-id="bbbbbbbbbbbbbbbbbbbbbbbb"]').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '运行中');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Running');
   await page.locator('#cancel').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '已停止');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Stopped');
   assert.equal(app.jobs.running.size, 0);
   await expectIdle();
   await page.locator('#resume').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '运行中');
-  await page.waitForFunction(() => [...document.querySelectorAll('#logs li')].filter(li => li.textContent.includes('验证失败')).length === 2);
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Running');
+  await page.waitForFunction(() => [...document.querySelectorAll('#logs li')].filter(li => li.textContent.includes('Verification failed')).length === 2);
   await page.locator('#cancel').click();
-  await page.waitForFunction(() => document.querySelector('#job-state').textContent === '已停止');
+  await page.waitForFunction(() => document.querySelector('#job-state').textContent === 'Stopped');
   await expectIdle();
   await page.locator('[data-job-id="cccccccccccccccccccccccc"]').click();
-  await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('任务已恢复'));
+  await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('Task resumed'));
   await expectIdle();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: resolve('.runs/web-preview/mobile.png'), fullPage: true });
@@ -239,9 +239,9 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   await page.locator('[name=lastName]').fill('Student');
   await page.locator('[name=birthDate]').fill('2000-01-02');
   await page.locator('#start').click();
-  await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('状态查询失败，请检查网络或代理'));
-  assert.doesNotMatch(await page.locator('#logs').innerText(), /验证失败|API_NETWORK_ERROR/);
-  assert.equal(await page.locator('#logs li').filter({ hasText: '状态查询暂时失败，正在重试' }).count(), 1);
+  await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('Status query failed. Check the network or proxy.'));
+  assert.doesNotMatch(await page.locator('#logs').innerText(), /Verification failed|API_NETWORK_ERROR/);
+  assert.equal(await page.locator('#logs li').filter({ hasText: 'Status query temporarily failed; retrying' }).count(), 1);
   await expectIdle();
   assert.deepEqual(errors, []);
 });

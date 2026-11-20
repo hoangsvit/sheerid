@@ -21,7 +21,7 @@ export class WebJobs {
 
   async readConfig() {
     try { return JSON.parse((await readFile(this.configFile, 'utf8')).replace(/^\uFEFF/, '')); }
-    catch { throw new AutomationError('INVALID_CONFIG', '配置文件无法读取或不是有效 JSON'); }
+    catch { throw new AutomationError('INVALID_CONFIG', 'Configuration file cannot be read or is not valid JSON'); }
   }
 
   async initialize() {
@@ -38,18 +38,18 @@ export class WebJobs {
   }
 
   async enqueue(input) {
-    if (this.closing) throw new AutomationError('SERVER_STOPPING', '服务正在关闭');
-    checkKeys(input, ['url', 'firstName', 'lastName', 'birthDate', 'proxy'], '表单');
+    if (this.closing) throw new AutomationError('SERVER_STOPPING', 'Service is shutting down');
+    checkKeys(input, ['url', 'firstName', 'lastName', 'birthDate', 'proxy'], 'form');
     for (const key of ['url', 'firstName', 'lastName',  'birthDate']) {
-      requireValue(typeof input[key] === 'string' && input[key].trim().length > 0, `请填写 ${key}`);
+      requireValue(typeof input[key] === 'string' && input[key].trim().length > 0, `Provide ${key}`);
     }
 
-    requireValue(input.proxy === undefined || typeof input.proxy === 'string', '代理必须是字符串');
+    requireValue(input.proxy === undefined || typeof input.proxy === 'string', 'Proxy must be a string');
     let id;
     try { id = verificationIdFromUrl(input.url.trim()); }
     catch (error) {
       if (error instanceof AutomationError) throw error;
-      throw new AutomationError('INVALID_CONFIG', '验证链接无效');
+      throw new AutomationError('INVALID_CONFIG', 'Invalid verification URL');
     }
     // Completed/cancelled IDs also remain unique until explicitly deleted.
     // Repeated clicks must never silently repeat an external submission.
@@ -62,7 +62,7 @@ export class WebJobs {
       raw.data?.emailDomain ||
       ''
     ).trim().replace(/^@+/, '');
-    requireValue(domain.length > 0, '配置文件未配置 organization.emailDomain');
+    requireValue(domain.length > 0, 'organization.emailDomain is missing in the configuration');
     const first = input.firstName.trim().toLowerCase().replace(/\s+/g, '');
     const last = input.lastName.trim().toLowerCase().replace(/\s+/g, '');
     const email = `${first}.${last}@${domain}`;
@@ -70,7 +70,7 @@ export class WebJobs {
       ...raw, url: input.url.trim(), proxy: input.proxy?.trim() || 'direct',
       data: { ...raw?.data, firstName: input.firstName.trim(), lastName: input.lastName.trim(), email, birthDate: input.birthDate.trim() },
     }, {});
-    if (this.closing) throw new AutomationError('SERVER_STOPPING', '服务正在关闭');
+    if (this.closing) throw new AutomationError('SERVER_STOPPING', 'Service is shutting down');
     this.concurrency = config.web.concurrency;
     const { promise: done, resolve: resolveDone } = Promise.withResolvers();
     const job = {
@@ -123,7 +123,7 @@ export class WebJobs {
       job.result = job.result?.status === 'submission_unknown' ? job.result : {
         status: 'failed', code: job.controller.signal.aborted ? 'CANCELLED'
           : error instanceof AutomationError ? error.code : 'WEB_WORKFLOW_ERROR',
-        message: error instanceof AutomationError ? error.message : '任务执行失败，请查看进度记录',
+        message: error instanceof AutomationError ? error.message : 'Task failed. Check the activity log.',
         stage: error.stage ?? job.stage,
         ...(job.resumeUncertainStage ? { submissionUncertain: true, uncertainStage: job.resumeUncertainStage } : {}),
       };
@@ -158,19 +158,19 @@ export class WebJobs {
 
   get(id, after = 0) {
     const job = this.jobs.get(id.toLowerCase());
-    if (!job) throw new AutomationError('JOB_NOT_FOUND', '任务不存在或已过期');
+    if (!job) throw new AutomationError('JOB_NOT_FOUND', 'Task not found or expired');
     return { job: this.snapshot(job), events: job.events.filter(event => event.sequence > after) };
   }
 
   cancel(id) {
     const job = this.jobs.get(id.toLowerCase());
-    if (!job) throw new AutomationError('JOB_NOT_FOUND', '任务不存在或已过期');
+    if (!job) throw new AutomationError('JOB_NOT_FOUND', 'Task not found or expired');
     if (job.state === 'queued') {
       this.queue = this.queue.filter(queuedId => queuedId !== job.id);
       job.controller.abort();
       job.state = 'cancelled';
       job.stage = 'cancelled';
-      job.result = { status: 'cancelled', code: 'CANCELLED', message: '排队任务已取消，未执行',
+      job.result = { status: 'cancelled', code: 'CANCELLED', message: 'Queued task cancelled before execution',
         ...(job.resumeUncertainStage ? { submissionUncertain: true, uncertainStage: job.resumeUncertainStage } : {}) };
       this.finish(job);
     } else if (job.state === 'running') {
@@ -182,13 +182,13 @@ export class WebJobs {
   }
 
   resume(id) {
-    if (this.closing) throw new AutomationError('SERVER_STOPPING', '服务正在关闭');
+    if (this.closing) throw new AutomationError('SERVER_STOPPING', 'Service is shutting down');
     const job = this.jobs.get(id.toLowerCase());
-    if (!job) throw new AutomationError('JOB_NOT_FOUND', '任务不存在或已过期');
+    if (!job) throw new AutomationError('JOB_NOT_FOUND', 'Task not found or expired');
     // Repeated clicks are idempotent. Cleanup must finish before a fresh run.
     if (['queued', 'running'].includes(job.state)) return this.snapshot(job);
     if (job.state !== 'cancelled' || !job.finishedAt || !job.config) {
-      throw new AutomationError('JOB_NOT_RESUMABLE', '仅已停止且完成资源清理的任务可以恢复');
+      throw new AutomationError('JOB_NOT_RESUMABLE', 'Only stopped tasks with completed cleanup can be resumed');
     }
     const { promise: done, resolve: resolveDone } = Promise.withResolvers();
     job.resumeUncertainStage = job.result?.uncertainStage
@@ -203,12 +203,12 @@ export class WebJobs {
   }
 
   remove(id) {
-    if (this.closing) throw new AutomationError('SERVER_STOPPING', '服务正在关闭');
+    if (this.closing) throw new AutomationError('SERVER_STOPPING', 'Service is shutting down');
     const job = this.jobs.get(id.toLowerCase());
-    if (!job) throw new AutomationError('JOB_NOT_FOUND', '任务不存在或已过期');
+    if (!job) throw new AutomationError('JOB_NOT_FOUND', 'Task not found or expired');
     if (!job.finishedAt || !['completed', 'failed', 'cancelled'].includes(job.state)
       || this.running.has(job.id) || this.queue.includes(job.id)) {
-      throw new AutomationError('JOB_ACTIVE', '请先停止任务，等待资源清理完成后再删除');
+      throw new AutomationError('JOB_ACTIVE', 'Stop the task and wait for cleanup before deleting it');
     }
     this.jobs.delete(job.id);
     return { id: job.id, deleted: true };

@@ -15,15 +15,15 @@ const assets = new Map([
 
 export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
   password = 'JenkinWoo', configFile = resolve('config/sheerid.local.json'), workflow } = {}) {
-  requireValue(['127.0.0.1', '0.0.0.0'].includes(host), 'Web 监听地址无效');
+  requireValue(['127.0.0.1', '0.0.0.0'].includes(host), 'Invalid web listener host');
   let published;
   if (publicOrigin) {
-    try { published = new URL(publicOrigin); } catch { throw new AutomationError('INVALID_CONFIG', '公网地址无效'); }
+    try { published = new URL(publicOrigin); } catch { throw new AutomationError('INVALID_CONFIG', 'Invalid public URL'); }
     requireValue(published.protocol === 'https:' && !published.username && !published.password
-      && published.pathname === '/' && !published.search && !published.hash, '公网地址必须为 HTTPS 域名');
+      && published.pathname === '/' && !published.search && !published.hash, 'Public origin must be an HTTPS domain');
   }
-  requireValue(typeof password === 'string' && password.length > 0, '访问密码不能为空');
-  requireValue(host !== '0.0.0.0' || published, '公网监听需要配置 HTTPS 访问地址');
+  requireValue(typeof password === 'string' && password.length > 0, 'Access password cannot be empty');
+  requireValue(host !== '0.0.0.0' || published, 'Public listening requires an HTTPS public origin');
   const digest = value => createHash('sha256').update(value).digest();
   const expectedPassword = digest(password);
   const sessionKey = randomBytes(32).toString('hex');
@@ -39,7 +39,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
           : error.code === 'FORBIDDEN' ? 403 : error.code === 'BODY_TOO_LARGE' ? 413
             : error instanceof AutomationError ? 400 : 500;
       json(response, status, { error: { code: error instanceof AutomationError ? error.code : 'WEB_ERROR',
-        message: error instanceof AutomationError ? error.message : '请求处理失败，请重试' } });
+        message: error instanceof AutomationError ? error.message : 'Request processing failed. Please retry.' } });
     });
   });
   server.requestTimeout = 120000;
@@ -48,18 +48,18 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
     const address = server.address();
     const hosts = [`127.0.0.1:${address.port}`, `localhost:${address.port}`];
     if (published) hosts.push(published.host);
-    if (!hosts.includes(request.headers.host)) throw new AutomationError('FORBIDDEN', '仅允许从本机工作台访问');
+    if (!hosts.includes(request.headers.host)) throw new AutomationError('FORBIDDEN', 'Access is limited to the local workbench');
     const expectedOrigin = published && request.headers.host === published.host ? published.origin : `http://${request.headers.host}`;
     // The trusted instabox proxy can replace Host with localhost:port while
     // retaining the browser's public HTTPS Origin. Trust only our configured
     // public origin; never derive it from arbitrary forwarded headers.
     if (request.headers.origin && request.headers.origin !== expectedOrigin
       && request.headers.origin !== published?.origin) {
-      throw new AutomationError('FORBIDDEN', '请求来源不匹配');
+      throw new AutomationError('FORBIDDEN', 'Request origin does not match');
     }
-    if (request.headers['sec-fetch-site'] === 'cross-site') throw new AutomationError('FORBIDDEN', '请求来源不匹配');
+    if (request.headers['sec-fetch-site'] === 'cross-site') throw new AutomationError('FORBIDDEN', 'Request origin does not match');
     if (write && request.headers['x-local-token'] !== token) {
-      throw new AutomationError('FORBIDDEN', '页面会话已失效，请刷新后重试');
+      throw new AutomationError('FORBIDDEN', 'Session expired. Refresh the page and retry.');
     }
   }
 
@@ -81,7 +81,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
     const passwordValid = timingSafeEqual(expectedPassword, digest(request.headers['x-web-password'] ?? ''));
     const sessionValid = timingSafeEqual(expectedSession, digest(cookie));
     if (!passwordValid && !sessionValid) {
-      json(response, 401, { error: { code: 'UNAUTHORIZED', message: '请输入正确的访问密码' } });
+      json(response, 401, { error: { code: 'UNAUTHORIZED', message: 'Enter the correct access password' } });
       return;
     }
     authorize(request, request.method !== 'GET');
@@ -95,12 +95,12 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
       return;
     }
     if (request.method === 'POST' && url.pathname === '/api/jobs') {
-      requireValue(request.headers['content-type']?.split(';')[0] === 'application/json', '任务请求需要 JSON 格式');
+      requireValue(request.headers['content-type']?.split(';')[0] === 'application/json', 'Task requests must use JSON');
       let input;
       try { input = JSON.parse((await readBody(request, 64 * 1024)).toString('utf8')); }
       catch (error) {
         if (error instanceof AutomationError) throw error;
-        throw new AutomationError('INVALID_CONFIG', '表单内容不是有效 JSON');
+        throw new AutomationError('INVALID_CONFIG', 'Form payload is not valid JSON');
       }
       const job = await jobs.start(input);
       json(response, 202, { job });
@@ -113,7 +113,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
     }
     if (jobRoute && request.method === 'GET' && !jobRoute[2]) {
       const after = Number(url.searchParams.get('after') ?? 0);
-      requireValue(Number.isSafeInteger(after) && after >= 0, '日志位置无效');
+      requireValue(Number.isSafeInteger(after) && after >= 0, 'Invalid event cursor');
       json(response, 200, jobs.get(jobRoute[1], after));
       return;
     }
@@ -122,7 +122,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
         ? jobs.resume(jobRoute[1]) : jobs.cancel(jobRoute[1]) });
       return;
     }
-    json(response, 404, { error: { code: 'NOT_FOUND', message: '页面或接口不存在' } });
+    json(response, 404, { error: { code: 'NOT_FOUND', message: 'Page or endpoint not found' } });
   }
 
   return {
@@ -148,12 +148,12 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
 }
 
 async function readBody(request, limit) {
-  if (Number(request.headers['content-length']) > limit) throw new AutomationError('BODY_TOO_LARGE', '文件或请求内容超过大小限制');
+  if (Number(request.headers['content-length']) > limit) throw new AutomationError('BODY_TOO_LARGE', 'Request body exceeds the size limit');
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > limit) throw new AutomationError('BODY_TOO_LARGE', '文件或请求内容超过大小限制');
+    if (size > limit) throw new AutomationError('BODY_TOO_LARGE', 'Request body exceeds the size limit');
     chunks.push(chunk);
   }
   return Buffer.concat(chunks, size);
@@ -167,16 +167,16 @@ function json(response, status, value) {
 if (isMainModule(import.meta.url)) {
   const { values } = parseArgs({ options: { port: { type: 'string', default: '8787' } } });
   const port = Number(values.port);
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('端口必须为 1024–65535 的整数');
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Port must be an integer between 1024 and 65535');
   const app = createWebServer({ port, host: process.env.ONE_WEB_HOST || '127.0.0.1',
     publicOrigin: process.env.ONE_WEB_PUBLIC_ORIGIN,
     password: process.env.ONE_WEB_PASSWORD });
   const shutdown = () => { void app.close().catch(() => { process.exitCode = 1; }); };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
-  app.start().then(origin => process.stdout.write(`sheeridVerify 本机工作台已启动：${origin}\n按 Ctrl+C 关闭服务。\n`)).catch(error => {
-    process.stderr.write(error.code === 'EADDRINUSE' ? `端口 ${port} 已被占用，请用 --port 指定其他端口。\n`
-      : error instanceof AutomationError ? `Web 服务启动失败：${error.message}\n` : 'Web 服务启动失败。\n');
+  app.start().then(origin => process.stdout.write(`sheeridVerify local workbench started: ${origin}\nPress Ctrl+C to stop the service.\n`)).catch(error => {
+    process.stderr.write(error.code === 'EADDRINUSE' ? `端口 ${port} is already in use. Specify another port with --port.\n`
+      : error instanceof AutomationError ? `Web service failed to start: ${error.message}\n` : 'Web service failed to start.\n');
     process.exitCode = 1;
     void app.close();
   });

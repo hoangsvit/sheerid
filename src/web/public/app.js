@@ -8,28 +8,28 @@ const pendingActions = new Set();
 let pollTimer, polling = false, pollRequested = false, queueActive = false, queueLoaded = false;
 let connecting;
 try { selectedId = sessionStorage.getItem('one-selected-job'); } catch { /* storage is optional */ }
-const states = { queued: '排队中', running: '运行中', cancelling: '正在停止', completed: '已结束', cancelled: '已停止', failed: '执行失败' };
+const states = { queued: 'Queued', running: 'Running', cancelling: 'Stopping', completed: 'Completed', cancelled: 'Stopped', failed: 'Failed' };
 
 function resultLabel(record) {
-  if (record.code === 'CANCELLED' || record.status === 'cancelled') return '任务已停止';
-  if (record.code === 'API_RATE_LIMITED') return '请求过于频繁，请稍后再试';
-  if (['PROXY_START_FAILED', 'PROXY_UNAVAILABLE', 'INVALID_PROXY', 'INVALID_SYSTEM_PROXY'].includes(record.code)) return '代理连接失败，请检查代理';
+  if (record.code === 'CANCELLED' || record.status === 'cancelled') return 'Task stopped';
+  if (record.code === 'API_RATE_LIMITED') return 'Too many requests. Please try again later.';
+  if (['PROXY_START_FAILED', 'PROXY_UNAVAILABLE', 'INVALID_PROXY', 'INVALID_SYSTEM_PROXY'].includes(record.code)) return 'Proxy connection failed. Check your proxy settings.';
   const stage = record.documentStage ?? record.stage;
   const querying = ['starting', 'preflight', 'query_status'].includes(stage);
   if (['API_NETWORK_ERROR', 'API_TIMEOUT', 'STATUS_REQUEST_FAILED', 'STATUS_REQUEST_TIMEOUT'].includes(record.code)) {
-    return querying ? '状态查询失败，请检查网络或代理'
-      : stage === 'upload_bytes' ? '文件上传失败，请检查网络或代理' : '网络请求失败，请检查网络或代理';
+    return querying ? 'Status query failed. Check the network or proxy.'
+      : stage === 'upload_bytes' ? 'File upload failed. Check the network or proxy.' : 'Network request failed. Check the network or proxy.';
   }
   if (['API_HTTP_ERROR', 'STATUS_HTTP_ERROR', 'API_RESPONSE_INVALID', 'STATUS_RESPONSE_INVALID'].includes(record.code)) {
-    return querying ? '状态查询失败，请稍后重试' : '接口请求失败，请稍后重试';
+    return querying ? 'Status query failed. Please retry later.' : 'API request failed. Please retry later.';
   }
   if (record.status === 'failed') {
     return record.currentStep === 'error' || record.errorIds?.length
       || ['VERIFICATION_UNAVAILABLE', 'HTTP_CLIENT_ERROR', 'SERVER_VALIDATION_ERROR'].includes(record.code)
-      ? '验证失败' : '任务执行失败';
+      ? 'Verification failed' : 'Task execution failed';
   }
-  return ({ verified: '验证成功', rejected: '验证失败', filled: '资料已填写', manual: '等待手动填写',
-    pending: '等待审核', submission_unknown: '等待确认提交结果' })[record.status] ?? '任务已结束';
+  return ({ verified: 'Verification successful', rejected: 'Verification failed', filled: 'Information entered', manual: 'Waiting for manual input',
+    pending: 'Awaiting review', submission_unknown: 'Awaiting submission confirmation' })[record.status] ?? '任务Completed';
 }
 
 // Display milestones, not keystrokes. The API cursor still consumes every event.
@@ -39,22 +39,22 @@ function activity(record) {
     return { text: label, resultKey: label };
   }
   if (record.event === 'stage_started') {
-    const text = { launch: '准备提交资料中', fill: '准备提交资料中', submit: '提交资料中',
-      document: '等待上传文件', read_document: '等待上传文件', cancel_sso: '等待上传文件',
-      initiate_upload: '等待上传文件', upload_bytes: '等待上传文件' }[record.stage];
+    const text = { launch: 'Preparing information', fill: 'Preparing information', submit: 'Submitting information',
+      document: 'Waiting for document upload', read_document: 'Waiting for document upload', cancel_sso: 'Waiting for document upload',
+      initiate_upload: 'Waiting for document upload', upload_bytes: 'Waiting for document upload' }[record.stage];
     return text ? { text } : null;
   }
-  if (record.event === 'stage_completed' && record.stage === 'upload_bytes') return { text: '文件已上传' };
+  if (record.event === 'stage_completed' && record.stage === 'upload_bytes') return { text: 'Document uploaded' };
   if (['waiting_for_review', 'verification_status'].includes(record.event)) {
-    if (record.code === 'AWAITING_WRITE_CONFIRMATION') return { text: '等待确认提交结果' };
-    if (record.currentStep === 'emailLoop') return { text: '等待完成邮件验证' };
-    if (record.currentStep === 'pending' || record.event === 'waiting_for_review') return { text: '等待审核' };
+    if (record.code === 'AWAITING_WRITE_CONFIRMATION') return { text: 'Awaiting submission confirmation' };
+    if (record.currentStep === 'emailLoop') return { text: 'Waiting for email verification' };
+    if (record.currentStep === 'pending' || record.event === 'waiting_for_review') return { text: 'Awaiting review' };
     return null;
   }
   const text = {
-    web_queued: '已加入队列', web_started: '检查当前状态', web_cancelling: '正在停止任务', web_resumed: '任务已恢复',
-    document_refetch: '等待上传文件', submission_uncertain: '等待确认提交结果',
-    status_query_retry: '状态查询暂时失败，正在重试',
+    web_queued: 'Added to queue', web_started: 'Checking current status', web_cancelling: 'Stopping task', web_resumed: 'Task resumed',
+    document_refetch: 'Waiting for document upload', submission_uncertain: 'Awaiting submission confirmation',
+    status_query_retry: 'Status query temporarily failed; retrying',
   }[record.event];
   return text ? { text } : null;
 }
@@ -62,7 +62,7 @@ function activity(record) {
 function setConn(state, text) { const el = $('#connection'); el.dataset.state = state; el.textContent = text; }
 function error(message = '') { $('#form-error').textContent = message; $('#form-error').hidden = !message; }
 function updateControls() {
-  $('#start').textContent = busy ? '正在加入…' : '加入队列';
+  $('#start').textContent = busy ? 'Adding…' : 'Add to queue';
   $('#form-fields').disabled = busy;
   $('#start').disabled = busy;
   $('#cancel').hidden = Boolean(selectedJob?.finishedAt) || selectedJob?.state === 'cancelled';
@@ -81,10 +81,10 @@ async function api(path, options = {}) {
       connected = false;
       token = undefined;
       field('password').required = true;
-      setConn('auth', '请输入访问密码');
+      setConn('auth', 'Enter access password');
       updateControls();
     }
-    throw Object.assign(new Error(data.error?.message ?? `请求失败 (${response.status})`), { status: response.status });
+    throw Object.assign(new Error(data.error?.message ?? `Request failed (${response.status})`), { status: response.status });
   }
   return data;
 }
@@ -109,7 +109,7 @@ function render(job, records = []) {
     $('#logs').append(item);
     if ($('#logs').children.length > 200) $('#logs').firstElementChild.remove();
   }
-  $('#log-count').textContent = `${$('#logs').querySelectorAll('li:not(.empty)').length} 条`;
+  $('#log-count').textContent = `${$('#logs').querySelectorAll('li:not(.empty)').length} events`;
   if (records.length) $('#logs').scrollTop = $('#logs').scrollHeight;
   updateControls();
 }
@@ -120,7 +120,7 @@ function selectJob(job) {
     lastActivity = '';
     displayedResults.clear();
     $('#logs').replaceChildren();
-    $('#log-count').textContent = '0 条';
+    $('#log-count').textContent = '0 events';
   }
   selectedId = job.id;
   try { sessionStorage.setItem('one-selected-job', selectedId); } catch { /* optional */ }
@@ -135,18 +135,18 @@ function clearSelection() {
   displayedResults.clear();
   try { sessionStorage.removeItem('one-selected-job'); } catch { /* optional */ }
   $('#selected-job').textContent = '';
-  $('#job-state').textContent = '待开始';
+  $('#job-state').textContent = 'Not started';
   delete $('#job-state').dataset.state;
-  $('#log-count').textContent = '0 条';
+  $('#log-count').textContent = '0 events';
   const empty = document.createElement('li');
   empty.className = 'empty';
-  empty.textContent = '任务开始后，进度将在这里更新。';
+  empty.textContent = 'Task progress will appear here after it starts.';
   $('#logs').replaceChildren(empty);
   updateControls();
 }
 
 function renderQueue(queue) {
-  $('#queue-summary').textContent = `运行 ${queue.running} / ${queue.concurrency} · 等待 ${queue.queued}`;
+  $('#queue-summary').textContent = `Running ${queue.running} / ${queue.concurrency} · Queued ${queue.queued}`;
   $('#jobs').replaceChildren();
   for (const job of queue.jobs) {
     const item = document.createElement('li');
@@ -157,7 +157,7 @@ function renderQueue(queue) {
     const id = document.createElement('span');
     id.textContent = job.id;
     const state = document.createElement('span');
-    state.textContent = states[job.state] + (job.state === 'queued' ? ` · 第 ${job.queuePosition} 位` : '');
+    state.textContent = states[job.state] + (job.state === 'queued' ? ` · Position ${job.queuePosition} 位` : '');
     button.append(id, state);
     button.addEventListener('click', () => { selectJob(job); renderQueue(queue); requestPoll(); });
     item.append(button);
@@ -197,7 +197,7 @@ async function poll() {
       } else render(job);
     }
   } catch (reason) {
-    error(reason.status === 401 ? reason.message : `进度连接中断：${reason.message}。${queueActive || !queueLoaded ? '正在重新连接。' : '请刷新页面重试。'}`);
+    error(reason.status === 401 ? reason.message : `Progress connection lost: ${reason.message}。${queueActive || !queueLoaded ? 'Reconnecting.' : 'Refresh the page and try again.'}`);
   } finally {
     polling = false;
     // Keep a single timer while there is work; an idle page sends no requests.
@@ -310,13 +310,13 @@ function connect() {
       token = session.token;
       connected = true;
       field('password').required = false;
-      setConn('ok', '服务已连接');
+      setConn('ok', 'Service connected');
       error();
       updateControls();
       requestPoll();
       return true;
     } catch (reason) {
-      if (reason.status === 401) setConn('auth', '请输入访问密码'); else setConn('error', '服务未连接');
+      if (reason.status === 401) setConn('auth', 'Enter access password'); else setConn('error', 'Service disconnected');
       if (reason.status !== 401 || field('password').value) error(reason.message);
       return false;
     } finally { connecting = undefined; }
