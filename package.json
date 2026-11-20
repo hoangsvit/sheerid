@@ -1,7 +1,7 @@
 {
   "name": "edu-verify-workbench",
   "version": "1.0.0",
-  "description": "Extensible verification workflows with fetch and Camoufox adapters",
+  "description": "English-language local workbench for authorized verification workflow testing",
   "private": true,
   "main": "src/index.js",
   "scripts": {
@@ -16,11 +16,11 @@
   "author": "JenkinWoo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stanlll-cloud/edu-verify-workbench.git"
+    "url": "git+https://github.com/hoangsvit/sheerid.git"
   },
-  "homepage": "https://github.com/stanlll-cloud/edu-verify-workbench#readme",
+  "homepage": "https://github.com/hoangsvit/sheerid#readme",
   "bugs": {
-    "url": "https://github.com/stanlll-cloud/edu-verify-workbench/issues"
+    "url": "https://github.com/hoangsvit/sheerid/issues"
   },
   "license": "ISC",
   "type": "module",
