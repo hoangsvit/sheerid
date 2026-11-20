@@ -20,7 +20,7 @@ async function executeAutomation(config, options) {
 async function executeLockedAutomation(config, { submit = false, signal, afterSubmit } = {}, app) {
   const manual = config.browser.autoFill === false;
   requireValue(!manual || (!submit && !config.browser.headless && config.browser.keepOpen !== false),
-    '手动填写模式需要有界面并保持浏览器打开，且不能使用 --submit');
+    'Manual input requires a visible, persistent browser and cannot be combined with --submit');
   const mode = manual ? 'manual' : submit ? 'submit' : 'fill';
   const runId = randomUUID();
   const log = createLogger(runId);
@@ -33,7 +33,7 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
   let result;
   const abort = () => { session?.close().catch(() => {}); };
   const checkAbort = () => {
-    if (signal?.aborted) throw new AutomationError('CANCELLED', '任务已取消');
+    if (signal?.aborted) throw new AutomationError('CANCELLED', 'Task cancelled');
   };
   signal?.addEventListener('abort', abort, { once: true });
   const envelope = outcome => ({ runId, app: config.app, mode,
@@ -76,7 +76,7 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
       checkAbort();
       if (!decision || typeof decision.proceed !== 'boolean'
         || (!decision.proceed && typeof decision.outcome?.status !== 'string')) {
-        throw new AutomationError('INVALID_PREFLIGHT_RESULT', '应用状态检查未返回明确决策，未启动浏览器');
+        throw new AutomationError('INVALID_PREFLIGHT_RESULT', 'App preflight did not return a definite decision; browser was not launched');
       }
       if (!decision.proceed) {
         result = envelope(submit && afterSubmit && followUpStatuses.includes(decision.outcome.status)
@@ -97,12 +97,12 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
     log('browser_identity_created', { stage, code: 'FRESH_CONTEXT' });
     stage = 'navigate';
     const response = await session.page.goto(config.url, { waitUntil: 'domcontentloaded' });
-    if (response && !response.ok()) throw new AutomationError('NAVIGATION_FAILED', '目标页面返回错误状态');
+    if (response && !response.ok()) throw new AutomationError('NAVIGATION_FAILED', 'Target page returned an error status');
     checkAbort();
     if (manual) {
       stage = 'manual';
       result = envelope({ status: 'manual', code: 'MANUAL_MODE',
-        message: '页面已打开，请手动填写和提交；关闭窗口结束任务。手动操作的验证结果以页面为准。' });
+        message: 'The page is open. Complete and submit manually, then close the window to end the task. The service determines the result.' });
       return result; // finally keeps the browser, proxy and task lock alive until the user closes it.
     }
     const interaction = createInteraction(config.interaction, { signal, log });
@@ -148,7 +148,7 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
     if (attempted && !pageFailure && !signal?.aborted && afterSubmit && !documentHandoffStarted) {
       try { result = envelope(await continueAfterSubmission({ status: 'submission_unknown' })); }
       catch { result = envelope({ status: 'failed', code: 'FOLLOW_UP_FAILED', submissionUncertain: true,
-        message: '提交后的状态查询未能继续，服务端最终结果尚未确认' }); }
+        message: 'Status polling could not continue after submission; the final server result remains unconfirmed' }); }
     }
   } finally {
     try {

@@ -34,12 +34,12 @@ export async function resolveProxy(value, env = process.env) {
 export async function systemProxy(env = process.env) {
   for (const name of ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'http_proxy']) {
     const value = env[name];
-    if (typeof value === 'string' && value.trim()) return parseSystemProxy(value, `环境变量 ${name}`);
+    if (typeof value === 'string' && value.trim()) return parseSystemProxy(value, `Environment variable ${name}`);
   }
   if (process.platform !== 'win32') return null;
   const settings = await readWindowsInternetSettings();
   if (!settings || Number(settings.ProxyEnable) !== 1 || !settings.ProxyServer?.trim()) return null;
-  return parseSystemProxy(pickWindowsProxy(settings.ProxyServer), 'Windows 系统代理');
+  return parseSystemProxy(pickWindowsProxy(settings.ProxyServer), 'Windows system proxy');
 }
 
 async function readWindowsInternetSettings() {
@@ -75,7 +75,7 @@ function parseSystemProxy(value, source) {
   try {
     return parseProxy(value);
   } catch {
-    throw new AutomationError('INVALID_SYSTEM_PROXY', `${source} 的代理地址无效；请修正系统代理，或在配置中显式设置 proxy（"direct" 表示直连）`);
+    throw new AutomationError('INVALID_SYSTEM_PROXY', `${source} has an invalid proxy address; fix the system proxy or explicitly set proxy to a valid URL or direct`);
   }
 }
 
@@ -84,13 +84,13 @@ export function parseProxy(value) {
   try {
     const object = typeof value === 'object' && !Array.isArray(value);
     if (object) {
-      requireValue(Object.keys(value).every(key => ['server', 'username', 'password'].includes(key)), 'proxy 包含不支持的配置项');
+      requireValue(Object.keys(value).every(key => ['server', 'username', 'password'].includes(key)), 'proxy contains unsupported keys');
       for (const key of ['username', 'password']) {
-        requireValue(value[key] === undefined || typeof value[key] === 'string', '代理账号密码必须是字符串');
+        requireValue(value[key] === undefined || typeof value[key] === 'string', 'Proxy credentials must be strings');
       }
     }
     let input = object ? value.server : value;
-    requireValue(typeof input === 'string' && input.trim().length > 0, '代理地址必须是非空字符串');
+    requireValue(typeof input === 'string' && input.trim().length > 0, 'Proxy address must be a nonempty string');
     input = input.trim().replace(/^sock5:\/\//i, 'socks5://');
     if (!/^[a-z][a-z\d+.-]*:\/\//i.test(input)) input = `http://${input}`;
     // Also accept the provider's host:port:username:password notation, keeping
@@ -100,19 +100,19 @@ export function parseProxy(value) {
       input = `${short[1]}://${encodeURIComponent(short[4])}:${encodeURIComponent(short[5])}@${short[2]}:${short[3]}`;
     }
     const url = new URL(input);
-    requireValue(['http:', 'https:', 'socks5:', 'socks5h:'].includes(url.protocol), '代理仅支持 HTTP、HTTPS 或 SOCKS5');
-    requireValue(Boolean(url.hostname) && !url.search && !url.hash && ['', '/'].includes(url.pathname), '代理地址不能包含路径或查询参数');
+    requireValue(['http:', 'https:', 'socks5:', 'socks5h:'].includes(url.protocol), 'Only HTTP, HTTPS or SOCKS5 proxies are supported');
+    requireValue(Boolean(url.hostname) && !url.search && !url.hash && ['', '/'].includes(url.pathname), 'Proxy URL must not include a path or query parameters');
     const embedded = Boolean(url.username || url.password);
-    requireValue(!(embedded && object && (value.username !== undefined || value.password !== undefined)), '代理凭据只能写在 URL 或独立字段中的一处');
+    requireValue(!(embedded && object && (value.username !== undefined || value.password !== undefined)), 'Specify proxy credentials either in the URL or in separate fields, not both');
     const username = embedded ? decodeURIComponent(url.username) : object ? value.username ?? '' : '';
     const password = embedded ? decodeURIComponent(url.password) : object ? value.password ?? '' : '';
-    requireValue(!/[\r\n\0]/.test(username + password) && (!password || username.length > 0), '代理凭据格式无效');
+    requireValue(!/[\r\n\0]/.test(username + password) && (!password || username.length > 0), 'Invalid proxy credentials');
     if (url.protocol.startsWith('socks5') && !url.port) url.port = '1080';
-    requireValue(url.port !== '0', '代理端口必须大于 0');
+    requireValue(url.port !== '0', 'Proxy port must be greater than 0');
     return Object.freeze({ server: `${url.protocol}//${url.host}`, username, password });
   } catch {
     // URL/parser exceptions can contain the entire password-bearing input.
-    throw new AutomationError('INVALID_PROXY', '代理配置无效；请使用 HTTP/SOCKS5 地址，或 host:port:username:password 格式');
+    throw new AutomationError('INVALID_PROXY', 'Invalid proxy configuration; use an HTTP/SOCKS5 URL or host:port:username:password');
   }
 }
 

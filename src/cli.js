@@ -58,7 +58,7 @@ async function main() {
 main().catch(error => {
   process.stderr.write(`${JSON.stringify({ status: 'failed',
     code: error instanceof AutomationError ? error.code : 'STARTUP_ERROR',
-    message: error instanceof AutomationError ? error.message : '启动或结果保存失败；请检查参数、配置和目录权限',
+    message: error instanceof AutomationError ? error.message : 'Startup or result save failed; check arguments, configuration and directory permissions',
   })}\n`);
   process.exitCode = 1;
 });

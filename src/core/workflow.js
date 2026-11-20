@@ -13,9 +13,9 @@ export function runWorkflow(config, options = {}) {
 }
 
 async function executeWorkflow(config, { submit = false, statusOnly = false, file, url: documentUrl, signal, resumeUncertainStage } = {}) {
-  requireValue(config.app === 'sheerid', '当前自动分流仅支持 sheerid');
-  requireValue(!(statusOnly && submit), '--status 与 --submit 不能同时使用');
-  requireValue(!(file !== undefined && documentUrl !== undefined), '--file 与 --url 只能指定一个');
+  requireValue(config.app === 'sheerid', 'Automatic routing currently supports only sheerid');
+  requireValue(!(statusOnly && submit), '--status and --submit cannot be used together');
+  requireValue(!(file !== undefined && documentUrl !== undefined), 'Specify either --file or --url, not both');
   if (statusOnly) return runDocumentWorkflow(config, { signal });
   signal?.throwIfAborted();
   if (resumeUncertainStage) return runDocumentWorkflow(config, {
@@ -30,10 +30,10 @@ async function executeWorkflow(config, { submit = false, statusOnly = false, fil
   log('verification_status', { stage: 'preflight', ...state });
   if (state.currentStep === 'collectStudentPersonalInfo' && state.errorIds.length === 0) {
     requireValue(config.browser.autoFill !== false || !submit,
-      '自动填写已关闭，请在浏览器中手动填写；进入材料步骤后可使用 --submit 上传材料');
+      'Autofill is disabled. Enter data manually in the browser; use --submit for evidence when the document stage is reached');
     const url = new URL(config.url);
     if (url.origin !== 'https://services.sheerid.com' || !/^\/verify\/[a-f\d]{24}\/?$/i.test(url.pathname)) {
-      throw new AutomationError('FORM_URL_REQUIRED', '当前需要填写表单，请将 url 设置为包含 verificationId 的完整 SheerID 验证页面链接');
+      throw new AutomationError('FORM_URL_REQUIRED', 'The form must be filled. Set url to the full SheerID verification page URL containing verificationId');
     }
     // Load Camoufox only for the browser branch; status/material-only runs stay browser-free.
     const { runAutomation } = await import('./runner.js');

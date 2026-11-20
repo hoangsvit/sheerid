@@ -8,22 +8,22 @@ export function isRecord(value) {
 }
 
 export function checkKeys(value, allowed, label) {
-  requireValue(isRecord(value), `${label} 必须是对象`);
-  requireValue(Object.keys(value).every(key => allowed.includes(key)), `${label} 包含不支持的配置项`);
+  requireValue(isRecord(value), `${label} must be an object`);
+  requireValue(Object.keys(value).every(key => allowed.includes(key)), `${label} contains unsupported keys`);
 }
 
 export function normalizeWebConfig(value = {}) {
   checkKeys(value, ['concurrency'], 'web');
   const concurrency = value.concurrency ?? 1;
   requireValue(Number.isSafeInteger(concurrency) && concurrency >= 1,
-    'web.concurrency 必须是大于等于 1 的整数');
+    'web.concurrency must be an integer greater than or equal to 1');
   return { concurrency };
 }
 
 function timeout(value, fallback, label) {
   const result = value ?? fallback;
   requireValue(Number.isInteger(result) && result >= 1000 && result <= 300000,
-    `${label} 必须是 1000–300000 毫秒的整数`);
+    `${label} must be an integer between 1,000 and 300,000 milliseconds`);
   return result;
 }
 
@@ -32,7 +32,7 @@ function delayRange(value, fallback, label, limit) {
   checkKeys(range, ['min', 'max'], label);
   requireValue(Number.isInteger(range.min) && Number.isInteger(range.max)
     && range.min >= 0 && range.max >= range.min && range.max <= limit,
-    `${label} 必须满足 0 <= min <= max <= ${limit}（毫秒整数）`);
+    `${label} must satisfy 0 <= min <= max <= ${limit} (milliseconds, integer)`);
   return { min: range.min, max: range.max };
 }
 
@@ -41,7 +41,7 @@ export async function loadConfig(filename, env = process.env) {
   try {
     raw = JSON.parse((await readFile(resolve(filename), 'utf8')).replace(/^\uFEFF/, ''));
   } catch (cause) {
-    throw new AutomationError('INVALID_CONFIG', '配置文件无法读取或不是有效 JSON', { cause });
+    throw new AutomationError('INVALID_CONFIG', 'The configuration file cannot be read or is not valid JSON', { cause });
   }
   return normalizeConfig(raw, env);
 }
@@ -52,38 +52,38 @@ export async function normalizeConfig(raw, env = process.env) {
   const web = normalizeWebConfig(raw.web);
   const polling = raw.polling ?? {};
   const rawDomain = raw.data?.organization?.emailDomain ?? raw.emailDomain ?? raw.data?.emailDomain;
-  requireValue(rawDomain === undefined || typeof rawDomain === 'string', 'emailDomain 必须是字符串');
+  requireValue(rawDomain === undefined || typeof rawDomain === 'string', 'emailDomain must be a string');
   const emailDomain = typeof rawDomain === 'string' ? rawDomain.trim().replace(/^@+/, '') : '';
   if (emailDomain) {
-    requireValue(/^[^\s@]+\.[^\s@]+$/.test(emailDomain), 'emailDomain 格式无效，必须如 xxx.edu');
+    requireValue(/^[^\s@]+\.[^\s@]+$/.test(emailDomain), 'Invalid emailDomain format; expected a domain such as example.edu');
   }
   checkKeys(polling, ['intervalMs'], 'polling');
   const intervalMs = timeout(polling.intervalMs, 5000, 'polling.intervalMs');
-  requireValue(typeof raw.app === 'string' && /^[a-z][a-z0-9-]*$/.test(raw.app), 'app 格式无效');
+  requireValue(typeof raw.app === 'string' && /^[a-z][a-z0-9-]*$/.test(raw.app), 'Invalid app format');
   const browser = raw.browser ?? {};
   const timeouts = raw.timeouts ?? {};
   const interaction = raw.interaction ?? {};
   const document = raw.document ?? {};
   checkKeys(document, ['path', 'url'], 'document');
-  requireValue(document.path === undefined || typeof document.path === 'string', 'document.path 必须是本地路径字符串');
-  requireValue(document.url === undefined || typeof document.url === 'string', 'document.url 必须是网络地址字符串');
-  requireValue(!(document.path?.trim() && document.url?.trim()), 'document.path 与 document.url 只能填写一个');
+  requireValue(document.path === undefined || typeof document.path === 'string', 'document.path must be a local filesystem path string');
+  requireValue(document.url === undefined || typeof document.url === 'string', 'document.url must be a URL string');
+  requireValue(!(document.path?.trim() && document.url?.trim()), 'Specify only one of document.path or document.url');
   checkKeys(interaction, ['keyDelayMs', 'fieldDelayMs', 'submitDelayMs'], 'interaction');
   checkKeys(browser, ['headless', 'locale', 'keepOpen', 'autoFill'], 'browser');
   checkKeys(timeouts, ['apiMs', 'downloadMs', 'uploadMs', 'actionMs', 'navigationMs', 'readyMs', 'humanMs', 'resultMs'], 'timeouts');
-  requireValue(browser.headless === undefined || typeof browser.headless === 'boolean', 'headless 必须是布尔值');
-  requireValue(browser.keepOpen === undefined || typeof browser.keepOpen === 'boolean', 'keepOpen 必须是布尔值');
-  requireValue(browser.autoFill === undefined || typeof browser.autoFill === 'boolean', 'autoFill 必须是布尔值');
+  requireValue(browser.headless === undefined || typeof browser.headless === 'boolean', 'headless must be a boolean');
+  requireValue(browser.keepOpen === undefined || typeof browser.keepOpen === 'boolean', 'keepOpen must be a boolean');
+  requireValue(browser.autoFill === undefined || typeof browser.autoFill === 'boolean', 'autoFill must be a boolean');
   requireValue(browser.autoFill !== false || (browser.headless !== true && browser.keepOpen !== false),
-    '手动填写模式需要 headless: false，并保持 keepOpen: true');
-  requireValue(!(browser.headless === true && browser.keepOpen === true), '无界面模式不能设置 keepOpen: true');
-  requireValue(browser.locale === undefined || (typeof browser.locale === 'string' && browser.locale.length > 0), 'locale 格式无效');
-  requireValue(raw.artifactsDir === undefined || (typeof raw.artifactsDir === 'string' && raw.artifactsDir.length > 0), 'artifactsDir 格式无效');
+    'Manual input mode requires headless: false and keepOpen: true');
+  requireValue(!(browser.headless === true && browser.keepOpen === true), 'Headless mode cannot keep the browser open');
+  requireValue(browser.locale === undefined || (typeof browser.locale === 'string' && browser.locale.length > 0), 'Invalid locale format');
+  requireValue(raw.artifactsDir === undefined || (typeof raw.artifactsDir === 'string' && raw.artifactsDir.length > 0), 'Invalid artifactsDir format');
   let url;
   try { url = new URL(env.AUTOMATION_URL || raw.url); } catch {
-    throw new AutomationError('INVALID_CONFIG', 'url 或 AUTOMATION_URL 必须是有效 URL');
+    throw new AutomationError('INVALID_CONFIG', 'url or AUTOMATION_URL must be a valid URL');
   }
-  requireValue(url.protocol === 'https:' && !url.username && !url.password, '仅支持无嵌入凭据的 HTTPS URL');
+  requireValue(url.protocol === 'https:' && !url.username && !url.password, 'Only HTTPS URLs without embedded credentials are supported');
   return {
     app: raw.app, url: url.href, data: raw.data, selectors: raw.selectors ?? {}, web, polling: { intervalMs }, emailDomain,
     // An empty AUTOMATION_PROXY falls back to the config file instead of forcing a value.

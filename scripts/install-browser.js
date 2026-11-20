@@ -8,10 +8,10 @@ const MARKER = "// Local workaround: stream Windows ZIP extraction with tar.exe.
 const UNZIP_SIGNATURE = "export function unzip(zipFile, extractPath, desc, bar = true) {";
 
 export function patchWindowsExtractor(source, version) {
-  if (version !== "0.5.9") throw new Error("浏览器安装补丁仅适用于 Camoufox 0.5.9，请先检查新版解压实现");
+  if (version !== "0.5.9") throw new Error("The browser-install patch applies only to Camoufox 0.5.9; inspect the updated unpacker before upgrading");
   if (source.includes(MARKER)) return source;
   if (!source.includes(UNZIP_SIGNATURE) || !source.includes("const zip = new AdmZip(zipFile);")) {
-    throw new Error("Camoufox 解压实现已变化，未应用补丁");
+    throw new Error("The Camoufox extraction implementation changed; patch not applied");
   }
   return source.replace(UNZIP_SIGNATURE, `${UNZIP_SIGNATURE}
     ${MARKER}
@@ -38,7 +38,7 @@ export async function installBrowser(args = process.argv.slice(2)) {
   const cli = join(packageDirectory, "dist", "__main__.js");
   const result = spawnSync(process.execPath, [cli, "fetch", ...args], { stdio: "inherit", windowsHide: true });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`浏览器安装失败（退出码 ${result.status}）`);
+  if (result.status !== 0) throw new Error(`Browser installation failed (exit code ${result.status})`);
 }
 
 if (isMainModule(import.meta.url)) installBrowser().catch(reportFatalError);

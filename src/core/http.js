@@ -2,7 +2,7 @@ import { AutomationError } from './errors.js';
 import { networkFetch } from './network.js';
 
 export function httpResponseError(response, {
-  code = 'API_HTTP_ERROR', message = `接口返回 HTTP ${response.status}，已停止流程`,
+  code = 'API_HTTP_ERROR', message = `API returned HTTP ${response.status}; workflow stopped`,
 } = {}) {
   let retryAfterSeconds;
   if (response.status === 429) {
@@ -12,9 +12,9 @@ export function httpResponseError(response, {
     if (Number.isSafeInteger(seconds)) retryAfterSeconds = Math.max(0, seconds);
     code = 'API_RATE_LIMITED';
     const guidance = retryAfterSeconds !== undefined
-      ? `请至少等待 ${retryAfterSeconds} 秒后再手动重试`
-      : '服务端未提供恢复时间，请稍后再试，避免连续运行';
-    message = `接口返回 HTTP 429（请求限流），已停止流程；${guidance}`;
+      ? `Wait at least ${retryAfterSeconds} seconds before retrying manually`
+      : 'The server did not provide a retry time. Wait before retrying; avoid repeated requests';
+    message = `API returned HTTP 429 (rate-limited); workflow stopped; ${guidance}`;
   }
   const error = new AutomationError(code, message);
   error.httpStatus = response.status;
@@ -51,12 +51,12 @@ export async function fetchData(url, { method = 'GET', json, bytes, mimeType, ti
     }
     try { return await response.json(); } catch (cause) {
       if (combined.aborted) throw cause;
-      throw new AutomationError('API_RESPONSE_INVALID', '接口未返回有效 JSON，已停止流程', { cause });
+      throw new AutomationError('API_RESPONSE_INVALID', 'API did not return valid JSON; workflow stopped', { cause });
     }
   } catch (cause) {
-    if (signal?.aborted) throw new AutomationError('CANCELLED', '接口操作已取消', { cause });
-    if (deadline.aborted) throw new AutomationError('API_TIMEOUT', '接口操作超时，请查询当前状态后再决定是否重试', { cause });
+    if (signal?.aborted) throw new AutomationError('CANCELLED', 'API operation cancelled', { cause });
+    if (deadline.aborted) throw new AutomationError('API_TIMEOUT', 'API operation timed out; check the current state before retrying', { cause });
     if (cause instanceof AutomationError) throw cause;
-    throw new AutomationError('API_NETWORK_ERROR', '接口请求失败，请查询当前状态后再决定是否重试', { cause });
+    throw new AutomationError('API_NETWORK_ERROR', 'API request failed; check current status before retrying', { cause });
   }
 }

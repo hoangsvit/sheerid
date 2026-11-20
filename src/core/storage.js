@@ -31,7 +31,7 @@ export async function acquireLock(directory, identity) {
   let handle;
   try { handle = await open(filename, 'wx', 0o600); } catch (cause) {
     throw new AutomationError(cause.code === 'EEXIST' ? 'TASK_LOCKED' : 'STORAGE_ERROR',
-      cause.code === 'EEXIST' ? '同一验证任务已锁定；确认旧进程结束后再处理 .runs 中的锁文件' : '无法创建任务锁', { cause });
+      cause.code === 'EEXIST' ? 'The same verification task is already locked; confirm the old process has stopped before removing the lock in .runs' : 'Unable to create task lock', { cause });
   }
   try {
     await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
