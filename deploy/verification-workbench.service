@@ -1,0 +1,18 @@
+[Unit]
+Description=Verification Workbench service
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/verification-workbench
+EnvironmentFile=/opt/verification-workbench/.env.web
+Environment=DISPLAY=:1
+ExecStart=/usr/local/bin/node /opt/verification-workbench/src/web/server.js
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=60
+UMask=0077
+
+[Install]
+WantedBy=default.target

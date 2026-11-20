@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible issue with the application or deployment. Remove sensitive data first.
+body:
+  - type: markdown
+    attributes:
+      value: Do not upload full configuration files, live verification URLs, student names, dates of birth, evidence, passwords, cookies or proxy credentials. Report security concerns privately according to SECURITY.md.
+  - type: textarea
+    attributes:
+      label: Environment
+      description: OS, Node.js version, commit SHA, and local or remote deployment details.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: Use a local fixture or a sanitized example.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Redacted error output
