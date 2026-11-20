@@ -12,7 +12,7 @@ export async function verificationFailure(page) {
   if (await errorStep.count() === 0 && await title.count() === 0) return null;
   return {
     status: 'failed', code: 'VERIFICATION_UNAVAILABLE',
-    message: 'SheerID 页面显示无法继续验证，本次验证失败；已停止填写、重试和提交',
+    message: 'The SheerID page indicates that verification cannot continue; form input, retries and submission were stopped',
   };
 }
 

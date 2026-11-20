@@ -12,9 +12,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 export const sheerid = {
   validate(config) {
     const url = new URL(config.url);
-    requireValue(url.origin === 'https://services.sheerid.com' && /^\/verify\/[a-f\d]{24}\/?$/i.test(url.pathname), 'SheerID URL 的域名或项目路径不正确');
+    requireValue(url.origin === 'https://services.sheerid.com' && /^\/verify\/[a-f\d]{24}\/?$/i.test(url.pathname), 'SheerID URL has an invalid host or project path');
     const verificationId = url.searchParams.get('verificationId');
-    requireValue(verificationId !== null && /^[a-f\d]{24}$/i.test(verificationId), '请使用包含有效 verificationId 的完整验证链接');
+    requireValue(verificationId !== null && /^[a-f\d]{24}$/i.test(verificationId), 'Use a complete verification URL with a valid verificationId');
   },
 
   preflight: checkVerificationStatus,
@@ -23,23 +23,23 @@ export const sheerid = {
   validateInput(config) {
     checkKeys(config.data, ['firstName', 'lastName', 'email', 'birthDate', 'organization', 'country', 'consent', 'emailDomain'], 'data');
     for (const name of ['firstName', 'lastName', 'email']) {
-      requireValue(typeof config.data[name] === 'string' && config.data[name].trim().length > 0, `请填写 data.${name}`);
+      requireValue(typeof config.data[name] === 'string' && config.data[name].trim().length > 0, `Provide data.${name}`);
     }
-    requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.data.email), 'email 格式无效');
+    requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.data.email), 'Invalid email format');
     const date = config.data.birthDate;
-    requireValue(typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date), 'birthDate 必须是 YYYY-MM-DD');
+    requireValue(typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date), 'birthDate must use YYYY-MM-DD');
     const timestamp = Date.parse(`${date}T00:00:00Z`);
     requireValue(Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === date && timestamp < Date.now() && Number(date.slice(0, 4)) >= 1900, 'birthDate 不是有效的出生日期');
     checkKeys(config.data.organization, ['name', 'optionText', 'emailDomain'], 'organization');
     for (const key of ['name', 'optionText']) {
-      requireValue(typeof config.data.organization[key] === 'string' && config.data.organization[key].trim().length > 0, `请填写 organization.${key}`);
+      requireValue(typeof config.data.organization[key] === 'string' && config.data.organization[key].trim().length > 0, `Provide organization.${key}`);
     }
     requireValue(typeof config.data.country === 'string' && config.data.country.trim().length > 0,
-      '请填写 data.country（学校所在国家，例如 United States）；此页面必须先选国家才能搜索学校');
-    requireValue(config.data.consent === undefined || typeof config.data.consent === 'boolean', 'consent 必须是布尔值');
+      'Provide data.country (the school country, for example United States); this page requires selecting a country before searching for the school');
+    requireValue(config.data.consent === undefined || typeof config.data.consent === 'boolean', 'consent must be a boolean');
     checkKeys(config.selectors, Object.keys(defaults), 'selectors');
     for (const list of Object.values(config.selectors)) {
-      requireValue(Array.isArray(list) && list.length > 0 && list.every(value => typeof value === 'string' && value.trim().length > 0), '每个选择器配置必须是非空字符串数组');
+      requireValue(Array.isArray(list) && list.length > 0 && list.every(value => typeof value === 'string' && value.trim().length > 0), 'Every selector setting must be a nonempty array of strings');
     }
   },
 
@@ -126,12 +126,12 @@ export const sheerid = {
     const selectors = { ...defaults, ...config.selectors };
     const button = await visibleField(page, selectors.submit, 'submit', config.timeouts.actionMs);
     const valid = await button.evaluate(element => !element.form || element.form.checkValidity());
-    if (!valid) throw new AutomationError('FORM_INVALID', '表单存在未填写或无效的必填字段');
+    if (!valid) throw new AutomationError('FORM_INVALID', 'The form has missing or invalid required fields');
     await waitForSubmitReady({ page, button, config, signal, log,
       assertReady: () => assertFormAvailable(page, config) });
     await assertFormAvailable(page, config);
     const stillValid = await button.evaluate(element => !element.form || element.form.checkValidity());
-    if (!stillValid) throw new AutomationError('FORM_INVALID', '等待验证期间表单数据发生变化或失效，请检查页面必填字段');
+    if (!stillValid) throw new AutomationError('FORM_INVALID', 'Form data changed or became invalid during verification; check required fields');
     const verificationId = new URL(config.url).searchParams.get('verificationId');
     // Arm the response listener before clicking; only observe this session's submission POST.
     let receivedResponse;
@@ -193,7 +193,7 @@ function isExpectedSession(page, config) {
 
 function assertSession(page, config) {
   if (!isExpectedSession(page, config)) {
-    throw new AutomationError('UNEXPECTED_PAGE', '页面已离开指定验证会话，已停止表单操作');
+    throw new AutomationError('UNEXPECTED_PAGE', 'The page left the expected verification session; form interaction stopped');
   }
 }
 

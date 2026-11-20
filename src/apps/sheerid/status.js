@@ -24,7 +24,7 @@ export function checkVerificationStatus(context) {
 async function readVerificationStatus({ config, signal }) {
   const verificationId = new URL(config.url).searchParams.get('verificationId')?.toLowerCase();
   if (!verificationId || !/^[a-f\d]{24}$/.test(verificationId)) {
-    throw new AutomationError('INVALID_CONFIG', '状态检查需要有效的 verificationId');
+    throw new AutomationError('INVALID_CONFIG', 'Status check requires a valid verificationId');
   }
   const timeoutSignal = AbortSignal.timeout(config.timeouts.apiMs);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -40,22 +40,22 @@ async function readVerificationStatus({ config, signal }) {
     if (!response.ok) {
       await response.body?.cancel();
       throw httpResponseError(response, {
-        code: 'STATUS_HTTP_ERROR', message: `状态接口返回 HTTP ${response.status}，未启动浏览器`,
+        code: 'STATUS_HTTP_ERROR', message: `Status endpoint returned HTTP ${response.status}; browser was not launched`,
       });
     }
     try {
       body = await response.json();
     } catch (cause) {
       if (requestSignal.aborted) throw cause;
-      throw new AutomationError('STATUS_RESPONSE_INVALID', '状态接口未返回有效 JSON，未启动浏览器', { cause });
+      throw new AutomationError('STATUS_RESPONSE_INVALID', 'Status endpoint did not return valid JSON; browser was not launched', { cause });
     }
   } catch (cause) {
-    if (signal?.aborted) throw new AutomationError('CANCELLED', '状态检查已取消', { cause });
+    if (signal?.aborted) throw new AutomationError('CANCELLED', 'Status check cancelled', { cause });
     if (timeoutSignal.aborted) {
-      throw new AutomationError('STATUS_REQUEST_TIMEOUT', '状态接口请求超时，未启动浏览器', { cause });
+      throw new AutomationError('STATUS_REQUEST_TIMEOUT', 'Status endpoint timed out; browser was not launched', { cause });
     }
     if (cause instanceof AutomationError) throw cause;
-    throw new AutomationError('STATUS_REQUEST_FAILED', '无法读取状态接口，未启动浏览器', { cause });
+    throw new AutomationError('STATUS_REQUEST_FAILED', 'Cannot read status endpoint; browser was not launched', { cause });
   }
   const errorIds = body?.errorIds ?? [];
   // Keep only bounded status codes; never log the full response or verification ID.
@@ -64,7 +64,7 @@ async function readVerificationStatus({ config, signal }) {
     || typeof body.currentStep !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(body.currentStep)
     || !Array.isArray(errorIds) || errorIds.length > 50
     || !errorIds.every(code => typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(code))) {
-    throw new AutomationError('STATUS_RESPONSE_INVALID', '状态接口字段无效或验证 ID 不匹配，未启动浏览器');
+    throw new AutomationError('STATUS_RESPONSE_INVALID', 'Invalid status endpoint fields or mismatched verification ID; browser was not launched');
   }
   const { currentStep } = body;
   if (currentStep === 'collectStudentPersonalInfo' && errorIds.length === 0) {
@@ -73,13 +73,13 @@ async function readVerificationStatus({ config, signal }) {
   const status = errorIds.length > 0 ? 'rejected'
     : Object.hasOwn(stepStatuses, currentStep) ? stepStatuses[currentStep] : 'not_actionable';
   const messages = {
-    verified: '接口确认验证已通过，无需填写，未启动浏览器',
-    document_required: '当前需要补交材料，无需填写初始表单，未启动浏览器',
-    sso_required: '当前需要学校登录验证，未启动浏览器',
-    email_required: '当前需要邮件验证，未启动浏览器',
-    pending: '当前正在等待审核，未启动浏览器',
-    rejected: '当前验证处于错误或拒绝状态，未启动浏览器；请按 SheerID 页面提示处理',
-    not_actionable: '当前不是支持的学生信息填写步骤，未启动浏览器',
+    verified: 'The provider confirmed verification; no form entry required; browser was not launched',
+    document_required: 'Additional documents are required; initial form entry is not needed; browser was not launched',
+    sso_required: 'School login verification is required; browser was not launched',
+    email_required: 'Email verification is required; browser was not launched',
+    pending: 'Review is currently pending; browser was not launched',
+    rejected: 'Verification is in an error or rejected state; browser was not launched; follow the instructions on the SheerID page',
+    not_actionable: 'The current step is not a supported student-information form; browser was not launched',
   };
   return {
     proceed: false,

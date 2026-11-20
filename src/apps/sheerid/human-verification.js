@@ -25,7 +25,7 @@ export async function waitForSubmitReady({ page, button, config, signal, log, as
   try {
     while (true) {
       signal?.throwIfAborted();
-      if (page.isClosed()) throw new AutomationError('PAGE_CLOSED', '等待提交按钮期间页面已关闭');
+      if (page.isClosed()) throw new AutomationError('PAGE_CLOSED', 'Page closed while waiting for the submit button');
       await assertReady();
       // A subsequent readiness check can succeed at the budget boundary, but
       // no further retry or wait is allowed after that boundary.
@@ -52,7 +52,7 @@ export async function waitForSubmitReady({ page, button, config, signal, log, as
         const sinceAttempt = Date.now() - state.lastAttemptAt;
         const resultReady = state.attempts === 0 || (state.transitioned && sinceAttempt >= 1000) || sinceAttempt >= 5000;
         if (hasError && !loading && resultReady && state.attempts >= MAX_RETRIES) {
-          throw new AutomationError('HUMAN_VERIFICATION_RETRY_EXHAUSTED', '真人验证已重试 3 次，页面仍提示失败；已停止任务，未提交表单');
+          throw new AutomationError('HUMAN_VERIFICATION_RETRY_EXHAUSTED', 'Human verification failed after three retries; the task was stopped without submitting the form');
         }
         if (Date.now() - started >= budget) break;
         if (hasError && !loading && retryEnabled && resultReady) {
@@ -65,7 +65,7 @@ export async function waitForSubmitReady({ page, button, config, signal, log, as
           state.transitioned = false;
           phase = 'HUMAN_VERIFICATION_RETRY_PENDING';
           log('human_verification_retry', { stage: 'wait_submit', code: `PAGE_RETRY_${state.attempts}_OF_3`,
-            message: `真人验证重试 ${state.attempts}/3，等待页面返回结果` });
+            message: `Human verification retry ${state.attempts}/3; waiting for page response` });
           await retry.click({ timeout: Math.min(1500, remaining()) });
         }
       } catch (error) {
@@ -75,13 +75,13 @@ export async function waitForSubmitReady({ page, button, config, signal, log, as
       if (Date.now() - started >= budget) break;
       if (Date.now() >= state.nextReport) {
         log('waiting_for_submit', { stage: 'wait_submit', code: phase,
-          message: `等待按钮可点击（已重试 ${state.attempts}/3）；如有交互式真人验证，请在浏览器中完成` });
+          message: `Waiting for button to become clickable (retry ${state.attempts}/3); complete interactive human verification in the browser if prompted` });
         state.nextReport = Date.now() + 10000;
       }
       await delay(Math.min(250, remaining()), undefined, { signal });
     }
     throw new AutomationError(state.sawVerification ? 'HUMAN_VERIFICATION_TIMEOUT' : 'SUBMIT_NOT_READY',
-      `等待提交按钮超时（已重试 ${state.attempts}/3），已停止任务，未提交表单`);
+      `Timed out waiting for the submit button (retry ${state.attempts}/3); task stopped without submitting`);
   } finally {
     state.waitedMs += Date.now() - started;
   }
