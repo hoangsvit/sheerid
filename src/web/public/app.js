@@ -29,7 +29,7 @@ function resultLabel(record) {
       ? 'Verification failed' : 'Task execution failed';
   }
   return ({ verified: 'Verification successful', rejected: 'Verification failed', filled: 'Information entered', manual: 'Waiting for manual input',
-    pending: 'Awaiting review', submission_unknown: 'Awaiting submission confirmation' })[record.status] ?? '任务Completed';
+    pending: 'Awaiting review', submission_unknown: 'Awaiting submission confirmation' })[record.status] ?? 'Task completed';
 }
 
 // Display milestones, not keystrokes. The API cursor still consumes every event.
@@ -157,7 +157,7 @@ function renderQueue(queue) {
     const id = document.createElement('span');
     id.textContent = job.id;
     const state = document.createElement('span');
-    state.textContent = states[job.state] + (job.state === 'queued' ? ` · Position ${job.queuePosition} 位` : '');
+    state.textContent = states[job.state] + (job.state === 'queued' ? ` · Position ${job.queuePosition}` : '');
     button.append(id, state);
     button.addEventListener('click', () => { selectJob(job); renderQueue(queue); requestPoll(); });
     item.append(button);

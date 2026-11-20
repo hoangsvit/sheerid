@@ -175,7 +175,7 @@ if (isMainModule(import.meta.url)) {
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
   app.start().then(origin => process.stdout.write(`sheeridVerify local workbench started: ${origin}\nPress Ctrl+C to stop the service.\n`)).catch(error => {
-    process.stderr.write(error.code === 'EADDRINUSE' ? `端口 ${port} is already in use. Specify another port with --port.\n`
+    process.stderr.write(error.code === 'EADDRINUSE' ? `Port ${port} is already in use. Specify another port with --port.\n`
       : error instanceof AutomationError ? `Web service failed to start: ${error.message}\n` : 'Web service failed to start.\n');
     process.exitCode = 1;
     void app.close();

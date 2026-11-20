@@ -38,7 +38,7 @@ test('Web UI deletes failed jobs, allows resubmission and preserves a different 
   await page.goto(origin);
   await page.locator('[name=password]').fill('JenkinWoo');
   await page.locator('[name=password]').blur();
-  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('已连接'));
+  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Service connected'));
   const id = 'dddddddddddddddddddddddd';
   const url = `https://services.sheerid.com/verify/aaaaaaaaaaaaaaaaaaaaaaaa/?verificationId=${id}`;
   await page.locator('[name=url]').fill(url);
@@ -52,7 +52,7 @@ test('Web UI deletes failed jobs, allows resubmission and preserves a different 
   await page.route(path, route => route.fulfill({ status: 409, contentType: 'application/json',
     body: JSON.stringify({ error: { message: 'Wait until resource cleanup finishes before deleting' } }) }));
   await page.locator('#delete').click();
-  await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('清理完成'));
+  await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('cleanup'));
   assert.equal(app.jobs.jobs.has(id), true, 'a rejected deletion keeps the task');
   await page.unroute(path);
   await page.locator('#delete').click();
@@ -123,7 +123,7 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
     log('stage_completed', { stage: 'upload_bytes' });
     log('stage_started', { stage: 'complete_upload' });
     for (let i = 0; i < 3; i++) log('waiting_for_review', { stage: 'wait_review', currentStep: 'pending' });
-    const outcome = { status: 'failed', code: 'VERIFICATION_UNAVAILABLE', message: '无法继续验证' };
+    const outcome = { status: 'failed', code: 'VERIFICATION_UNAVAILABLE', message: 'Verification cannot continue' };
     log('run_finished', outcome);
     log('run_finished', outcome);
     log('browser_kept_open', { stage: 'await_user_close' });
@@ -155,11 +155,11 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   assert.equal(await page.locator('[name=password]').inputValue(), '');
   await page.locator('[name=password]').fill('wrong-password');
   await page.locator('[name=password]').blur();
-  await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('正确的Access password'));
+  await page.waitForFunction(() => document.querySelector('#form-error').textContent.includes('correct access password'));
   assert.equal(app.jobs.jobs.size, 0);
   await page.locator('[name=password]').fill('JenkinWoo');
   await page.locator('[name=password]').blur();
-  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('已连接'));
+  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Service connected'));
   await page.waitForFunction(() => !document.querySelector('#start').disabled);
   await expectIdle();
   assert.equal(await page.locator('[name=firstName]').inputValue(), '');
@@ -175,7 +175,7 @@ test('Web UI queues multiple IDs, reconnects and stops only the selected task', 
   await page.locator('#start').click();
   await page.waitForFunction(() => document.querySelector('#logs').textContent.includes('Verification failed'));
   assert.equal(await page.locator('.status-box, #stage, #outcome, #result-detail').count(), 0);
-  assert.doesNotMatch(await page.locator('#logs').innerText(), /interaction_delay|field_filled|VERIFICATION_UNAVAILABLE|wait_submit|启动浏览器|等待页面就绪|无法继续验证/);
+  assert.doesNotMatch(await page.locator('#logs').innerText(), /interaction_delay|field_filled|VERIFICATION_UNAVAILABLE|wait_submit|launching browser|waiting for page readiness|Verification cannot continue/);
   assert.deepEqual(await page.locator('#logs li').evaluateAll(items => items.map(item => item.lastChild.textContent)),
     ['Added to queue', 'Checking current status', 'Preparing information', 'Submitting information', 'Waiting for document upload', 'Document uploaded', 'Awaiting review', 'Verification failed']);
   assert.equal(await page.locator('#logs li').filter({ hasText: 'Verification failed' }).count(), 1);
