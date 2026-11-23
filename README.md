@@ -43,6 +43,8 @@ Copy-Item config/sheerid.example.json config/sheerid.local.json
 
 Edit `config/sheerid.local.json`. Set the actual country, institution, permitted email domain, and document source for your authorized testing. The example is deliberately not filled with real student information. Only one of `document.path` or `document.url` may be supplied.
 
+For `data.country`, prefer the school's actual two-letter ISO 3166-1 country code (for example, `US` for a school in the United States). The form selector searches using the displayed page language and only commits an exact country choice or a matching ISO-coded option; it never guesses a nearby country. If `OPTION_LABEL_MISMATCH` persists, inspect the country dropdown and check the code and page language instead of repeating submissions.
+
 Start the web interface:
 
 ```bash
