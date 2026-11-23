@@ -6,6 +6,7 @@ import { withTaskLock, saveResult } from '../../core/storage.js';
 import { createVerificationClient, validateUploadUrl } from './client.js';
 import { readDocument, selectDocumentSource } from './document.js';
 import { withNetwork } from '../../core/network.js';
+import { responseDetails } from '../../core/response-details.js';
 
 function describe(state) {
   const statuses = {
@@ -64,9 +65,9 @@ async function executeLockedDocumentWorkflow(config, { submit = false, file, url
         log('verification_status', { stage, ...response.state });
         return response.state;
       } catch (error) {
-        const transient = ['API_NETWORK_ERROR', 'API_TIMEOUT'].includes(error.code) || error.httpStatus >= 500
+        const transient = ['API_NETWORK_ERROR', 'API_TIMEOUT'].includes(error.code) || (error.httpStatus >= 500 && error.httpStatus < 600)
           || (error.httpStatus === 429 && error.retryAfterSeconds !== undefined && !error.terminal);
-        if (!submit || signal?.aborted || !transient) throw error;
+        if (!submit || signal?.aborted || error.terminal || !transient) throw error;
         const delayMs = Math.max(Math.min(intervalMs * 2 ** Math.min(failures++, 6), 60000), (error.retryAfterSeconds ?? 0) * 1000);
         stage = 'wait_review';
         log('status_query_retry', { stage, code: error.code, delayMs });
@@ -144,6 +145,7 @@ async function executeLockedDocumentWorkflow(config, { submit = false, file, url
       if (['sso', 'docUpload'].includes(state.currentStep) && !uncertainStage) {
         try { await upload(); }
         catch (error) {
+          if (error.stateConfirmed && error.terminal) { inFlight = false; throw error; }
           const knownRejection = error.httpStatus >= 400 && error.httpStatus < 500;
           if (knownRejection) inFlight = false;
           if (!inFlight || knownRejection || signal?.aborted) throw error;
@@ -169,7 +171,8 @@ async function executeLockedDocumentWorkflow(config, { submit = false, file, url
       code: signal?.aborted ? 'CANCELLED' : error instanceof AutomationError ? error.code : 'DOCUMENT_WORKFLOW_ERROR',
       message: signal?.aborted ? 'Task stopped; the server determines the final outcome of any submitted operation'
         : error instanceof AutomationError ? error.message : 'Document API workflow failed; operation stopped',
-      lastKnownStep: state?.currentStep, submissionUncertain: Boolean(uncertainStage || inFlight),
+      stateConfirmed: false, lastKnownStep: state?.currentStep, lastKnownAt: state?.stateCheckedAt,
+      ...responseDetails(error), submissionUncertain: Boolean(uncertainStage || inFlight),
       uncertainStage: uncertainStage || (inFlight ? stage : undefined),
     });
   } finally {

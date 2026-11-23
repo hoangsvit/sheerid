@@ -1,6 +1,6 @@
 # Verification Workbench
 
-A Node.js local workbench for **authorized educational verification workflow testing**. It combines an authenticated web interface, an in-memory task queue, browser form interaction via Camoufox, and verification status checks over HTTP.
+A Node.js local workbench for **authorized educational verification workflow testing**. It combines a local web interface, a task queue with saved history, browser form interaction via Camoufox, and verification status checks over HTTP.
 
 > **Permitted use:** Use only with accounts, student details and documents you are authorized to provide. Do not impersonate students, submit fabricated evidence, bypass eligibility reviews or use this project to obtain benefits you are not eligible for. It is not affiliated with SheerID or any institution and cannot guarantee verification.
 
@@ -11,8 +11,8 @@ A Node.js local workbench for **authorized educational verification workflow tes
 - Read verification state before choosing the browser or document-upload flow.
 - Use Camoufox for supported form-interaction steps; interactive human challenges remain manual.
 - Submit original PNG, JPEG or PDF evidence you legitimately possess, without generating or modifying proof.
-- Protect the local web API with a password, session cookie, origin checks and a request token.
-- Configure task concurrency; the default is **1**. Jobs and their histories live in process memory and are not automatically restored after restart.
+- Open the local web interface without a password; origin checks and an automatic request token protect web requests.
+- Configure task concurrency; the default is **1**. Jobs, request results and recent activity are saved locally and restored after restart.
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Start the web interface:
 npm run web
 ```
 
-Open **http://127.0.0.1:8787**. The local development password is `local-dev-only`. **Set a unique `WORKBENCH_WEB_PASSWORD` before use outside an isolated local test environment**. Do not expose the service publicly without HTTPS and proper access restrictions.
+Open **http://127.0.0.1:8787**. The page connects automatically without a password. Remote deployments use HTTPS and access controls supplied by the reverse proxy or network.
 
 ## Web configuration and behavior
 
@@ -57,23 +57,33 @@ Open **http://127.0.0.1:8787**. The local development password is `local-dev-onl
 - Verification links need a valid `verificationId`. The email address is constructed from the entered name and configured `data.organization.emailDomain`. Use only a real address you control.
 - A blank proxy field forces a direct connection; it does not inherit system proxy settings.
 - `web.concurrency` controls the number of active tasks and defaults to 1.
-- A task uses its `verificationId` as an in-process unique key. A finished task may be deleted and submitted again as a new task.
+- A task uses its `verificationId` as a unique key across restarts. Submitting the same ID selects the saved task. A finished task may be explicitly deleted and submitted again as a new task.
 - Review waits and manually operated browsers may continue occupying a task slot.
 - The web interface polls while tasks are active and stops polling when idle.
-- The `Fill sample data` button is for **mock/local UI demonstrations only**, not for submitting identities to a real service.
+- **Saved jobs** retains creation times, results, recent activity and a request history in `<artifactsDir>/web-jobs.json` (default `.runs/web-jobs.json`). Form names, birth dates, full verification URLs and proxy credentials are not stored in this history or returned by the job history endpoints.
+- Select a finished job and use **Check status** to read its existing verification once. This also works for failed jobs and after restarting the service; it does not open a browser, submit information or upload documents. Each check appears in the job's request history, preserving earlier results.
+- HTTP 429 adds a local cooldown of at least 60 seconds, or the server's longer `Retry-After`. The button becomes available when the cooldown expires; no automatic API retry is scheduled. This is a minimum request spacing, not a promise that the provider's limit has expired.
+- Task execution state and provider verification state are separate. HTTP failures preserve `httpStatus` and bounded provider codes. A JSON error response confirms `currentStep` only when its fields validate and `verificationId` matches the requested job; `stateConfirmed` and `stateCheckedAt` identify that observation. Responses without enough identity/state information retain diagnostic codes under `responseErrorIds` / `responseRejectionReasons` and remain unconfirmed. Full response bodies are never saved.
+- If a check fails without a validated state, the UI marks the current verification state unconfirmed and shows the last confirmed response with its receipt time. `lastKnownStep` / `lastKnownAt` are historical context. `lastCheckedAt` records a check attempt, including failures. Provider error codes in a validated terminal response are displayed even when the HTTP status is 429; these responses are not automatically retried.
+- Restarting restores unfinished jobs as interrupted. They remain idle until you check status. **Resume** is available only for stopped submission tasks whose original settings are still in memory. Restored jobs use a direct connection for status checks; custom proxy credentials are not restored.
+- One web service owns each history file. Invalid history prevents startup instead of silently discarding it. Stop the existing service before starting another against the same history.
+- Jobs created before this feature are not automatically recoverable: older `.runs/<runId>.json` files do not contain the verification ID needed to reconstruct a job.
+- **Fill saved data** fills `data.firstName`, `data.lastName` and `data.birthDate` from your local configuration (for example, details you transcribed from your document). It reads the current settings each time and does not queue a task. Missing or invalid details show an error; the button never generates random identities.
 
 ## API overview
 
-The web API is locally hosted and uses an authenticated session or `X-Web-Password`. Write requests require `X-Local-Token`, available from `GET /api/session`.
+The web API is locally hosted and has no application password or login cookie. Write requests require `X-Local-Token`, obtained automatically by the page from `GET /api/session`.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/session` | Retrieve the session token |
+| `GET` | `/api/form-defaults` | Retrieve only the configured first name, last name and birth date |
 | `GET` | `/api/jobs` | List queue and task summaries |
 | `POST` | `/api/jobs` | Queue a task |
 | `GET` | `/api/jobs/:verificationId` | Read a task and its event history |
 | `POST` | `/api/jobs/:verificationId/cancel` | Stop a task |
 | `POST` | `/api/jobs/:verificationId/resume` | Resume a stopped task |
+| `POST` | `/api/jobs/:verificationId/check-status` | Queue one read-only status check for a saved job |
 | `DELETE` | `/api/jobs/:verificationId` | Delete a finished task |
 
 The browser workflow and HTTP API are intended for controlled, authorized scenarios. See [browser workflow](docs/browser-workflow.md) and [deployment instructions](docs/DEPLOYMENT.md).

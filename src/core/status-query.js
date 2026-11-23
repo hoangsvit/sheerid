@@ -10,7 +10,7 @@ export async function queryStatusWithRetry(read, { signal, intervalMs = 5000, lo
       error.stage = 'preflight';
       const transient = ['API_NETWORK_ERROR', 'API_TIMEOUT', 'STATUS_REQUEST_FAILED', 'STATUS_REQUEST_TIMEOUT'].includes(error.code)
         || (error.httpStatus >= 500 && error.httpStatus < 600);
-      if (signal?.aborted || !transient || attempt >= 3) throw error;
+      if (signal?.aborted || error.terminal || !transient || attempt >= 3) throw error;
       const delayMs = Math.min(intervalMs * 2 ** (attempt - 1), 30000);
       log('status_query_retry', { stage: 'preflight', code: error.code, delayMs });
       await delay(delayMs, undefined, { signal });

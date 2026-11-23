@@ -1,5 +1,6 @@
 // Only log deliberate event metadata. Never serialize browser errors, URLs or form data.
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { responseDetails } from './response-details.js';
 
 const logSinks = new AsyncLocalStorage();
 
@@ -14,6 +15,7 @@ export function createLogger(runId, stream = process.stderr) {
       documentRunId, documentStage, rejectionReasons, uploadAttempt, delayMs, submissionUncertain } = metadata;
     const record = {
       time: new Date().toISOString(), runId, event,
+      ...responseDetails(metadata),
       app, stage, status, code, durationMs, field, pendingFields, mode, message,
       currentStep, errorIds, browserOpened, remoteWriteAttempted, submissionAttempted, lastKnownStep,
       documentRunId, documentStage, rejectionReasons, uploadAttempt, delayMs, submissionUncertain,

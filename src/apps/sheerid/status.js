@@ -1,7 +1,8 @@
 import { AutomationError } from '../../core/errors.js';
 import { isRecord } from '../../core/config.js';
 import { networkFetch } from '../../core/network.js';
-import { httpResponseError } from '../../core/http.js';
+import { readResponseError } from '../../core/http.js';
+import { verificationErrorDetails } from './verification-state.js';
 import { queryStatusWithRetry } from '../../core/status-query.js';
 
 export const stepStatuses = Object.freeze({
@@ -38,9 +39,9 @@ async function readVerificationStatus({ config, signal }) {
       signal: requestSignal,
     });
     if (!response.ok) {
-      await response.body?.cancel();
-      throw httpResponseError(response, {
+      throw await readResponseError(response, {
         code: 'STATUS_HTTP_ERROR', message: `Status endpoint returned HTTP ${response.status}; browser was not launched`,
+        parseErrorBody: body => verificationErrorDetails(body, verificationId),
       });
     }
     try {
@@ -58,17 +59,21 @@ async function readVerificationStatus({ config, signal }) {
     throw new AutomationError('STATUS_REQUEST_FAILED', 'Cannot read status endpoint; browser was not launched', { cause });
   }
   const errorIds = body?.errorIds ?? [];
+  const rejectionReasons = body?.rejectionReasons ?? [];
   // Keep only bounded status codes; never log the full response or verification ID.
   if (!isRecord(body) || typeof body.verificationId !== 'string'
     || body.verificationId.toLowerCase() !== verificationId
     || typeof body.currentStep !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(body.currentStep)
     || !Array.isArray(errorIds) || errorIds.length > 50
-    || !errorIds.every(code => typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(code))) {
+    || !errorIds.every(code => typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(code))
+    || !Array.isArray(rejectionReasons) || rejectionReasons.length > 50
+    || !rejectionReasons.every(code => typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(code))) {
     throw new AutomationError('STATUS_RESPONSE_INVALID', 'Invalid status endpoint fields or mismatched verification ID; browser was not launched');
   }
   const { currentStep } = body;
+  const details = { currentStep, errorIds, rejectionReasons, stateConfirmed: true, stateCheckedAt: new Date().toISOString() };
   if (currentStep === 'collectStudentPersonalInfo' && errorIds.length === 0) {
-    return { proceed: true, currentStep, errorIds };
+    return { proceed: true, ...details };
   }
   const status = errorIds.length > 0 ? 'rejected'
     : Object.hasOwn(stepStatuses, currentStep) ? stepStatuses[currentStep] : 'not_actionable';
@@ -83,6 +88,6 @@ async function readVerificationStatus({ config, signal }) {
   };
   return {
     proceed: false,
-    outcome: { status, currentStep, errorIds, code: 'PREFLIGHT_NO_FORM', message: messages[status] },
+    outcome: { status, ...details, code: 'PREFLIGHT_NO_FORM', message: messages[status] },
   };
 }

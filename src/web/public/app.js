@@ -6,13 +6,15 @@ let lastActivity = '';
 const displayedResults = new Set();
 const pendingActions = new Set();
 let pollTimer, polling = false, pollRequested = false, queueActive = false, queueLoaded = false;
-let connecting;
+let connecting, cooldownTimer, fillingSaved = false;
 try { selectedId = sessionStorage.getItem('workbench-selected-job'); } catch { /* storage is optional */ }
 const states = { queued: 'Queued', running: 'Running', cancelling: 'Stopping', completed: 'Completed', cancelled: 'Stopped', failed: 'Failed' };
 
 function resultLabel(record) {
   if (record.code === 'CANCELLED' || record.status === 'cancelled') return 'Task stopped';
-  if (record.code === 'API_RATE_LIMITED') return 'Too many requests. Please try again later.';
+  if (record.code === 'SERVICE_INTERRUPTED') return 'Service interrupted. Check current status.';
+  if (record.stateConfirmed && (record.currentStep === 'error' || record.errorIds?.length)) return 'Verification cannot continue (provider response)';
+  if (record.code === 'API_RATE_LIMITED') return 'Status unavailable (HTTP 429)';
   if (['PROXY_START_FAILED', 'PROXY_UNAVAILABLE', 'INVALID_PROXY', 'INVALID_SYSTEM_PROXY'].includes(record.code)) return 'Proxy connection failed. Check your proxy settings.';
   const stage = record.documentStage ?? record.stage;
   const querying = ['starting', 'preflight', 'query_status'].includes(stage);
@@ -48,11 +50,14 @@ function activity(record) {
   if (['waiting_for_review', 'verification_status'].includes(record.event)) {
     if (record.code === 'AWAITING_WRITE_CONFIRMATION') return { text: 'Awaiting submission confirmation' };
     if (record.currentStep === 'emailLoop') return { text: 'Waiting for email verification' };
-    if (record.currentStep === 'pending' || record.event === 'waiting_for_review') return { text: 'Awaiting review' };
+    if (record.currentStep === 'pending') return { text: 'Awaiting review' };
+    if (record.event === 'waiting_for_review') return { text: ({ docUpload: 'Additional documents requested',
+      sso: 'School sign-in required', collectStudentPersonalInfo: 'Waiting for server confirmation' })[record.currentStep] ?? 'Waiting for provider status' };
     return null;
   }
   const text = {
     web_queued: 'Added to queue', web_started: 'Checking current status', web_cancelling: 'Stopping task', web_resumed: 'Task resumed',
+    web_status_check: 'Status check requested', web_recovered: 'Restored after service interruption; check current status',
     document_refetch: 'Waiting for document upload', submission_uncertain: 'Awaiting submission confirmation',
     status_query_retry: 'Status query temporarily failed; retrying',
   }[record.event];
@@ -63,27 +68,30 @@ function setConn(state, text) { const el = $('#connection'); el.dataset.state = 
 function error(message = '') { $('#form-error').textContent = message; $('#form-error').hidden = !message; }
 function updateControls() {
   $('#start').textContent = busy ? 'Adding…' : 'Add to queue';
-  $('#form-fields').disabled = busy;
-  $('#start').disabled = busy;
+  $('#form-fields').disabled = busy || fillingSaved;
+  $('#start').disabled = busy || fillingSaved;
+  $('#fill-saved').disabled = busy || fillingSaved;
+  $('#fill-saved').textContent = fillingSaved ? 'Filling…' : 'Fill saved data';
   $('#cancel').hidden = Boolean(selectedJob?.finishedAt) || selectedJob?.state === 'cancelled';
   $('#cancel').disabled = !connected || !selectedJob || Boolean(selectedJob.finishedAt) || selectedJob.state === 'cancelling' || pendingActions.has(selectedId);
-  $('#resume').hidden = selectedJob?.state !== 'cancelled';
+  $('#resume').hidden = !selectedJob?.canResume;
   $('#resume').disabled = !connected || !selectedJob?.finishedAt || pendingActions.has(selectedId);
   $('#delete').hidden = !selectedJob?.finishedAt || !['completed', 'failed', 'cancelled'].includes(selectedJob.state);
   $('#delete').disabled = !connected || pendingActions.has(selectedId);
+  const checking = selectedJob?.operation === 'status' && !selectedJob?.finishedAt;
+  const remaining = Math.max(0, Date.parse(selectedJob?.retryAt) - Date.now()) || 0;
+  $('#check-status').hidden = !selectedJob?.finishedAt && !checking;
+  $('#check-status').disabled = !connected || !selectedJob?.finishedAt || pendingActions.has(selectedId) || remaining > 0;
+  $('#check-status').textContent = checking ? 'Checking status…' : remaining > 0
+    ? `Check status in ${Math.ceil(remaining / 1000)}s` : 'Check status';
+  clearTimeout(cooldownTimer);
+  if (remaining > 0) cooldownTimer = setTimeout(updateControls, Math.min(remaining, 1000));
 }
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'X-Local-Token': token ?? '',
-    ...(field('password').value ? { 'X-Web-Password': field('password').value } : {}), ...options.headers } });
+    ...options.headers } });
   const data = await response.json();
   if (!response.ok) {
-    if (response.status === 401) {
-      connected = false;
-      token = undefined;
-      field('password').required = true;
-      setConn('auth', 'Enter access password');
-      updateControls();
-    }
     throw Object.assign(new Error(data.error?.message ?? `Request failed (${response.status})`), { status: response.status });
   }
   return data;
@@ -91,12 +99,18 @@ async function api(path, options = {}) {
 function render(job, records = []) {
   selectedJob = job;
   $('#selected-job').textContent = job.id;
-  $('#job-state').textContent = states[job.state];
+  $('#job-state').textContent = job.state === 'completed' && job.result ? resultLabel(job.result) : states[job.state];
   $('#job-state').dataset.state = job.state;
+  $('#job-summary').textContent = [
+    job.result ? resultLabel(job.result) : job.operation === 'status' ? 'Reading current status' : '',
+    job.createdAt ? `Created ${new Date(job.createdAt).toLocaleString()}` : '',
+    job.lastCheckedAt ? `Last check attempted ${new Date(job.lastCheckedAt).toLocaleString()}` : '',
+  ].filter(Boolean).join(' · ');
+  renderProviderState(job);
   for (const record of records) {
     if (record.sequence <= cursor) continue;
     cursor = Math.max(cursor, record.sequence);
-    if (record.event === 'web_resumed') { lastActivity = ''; displayedResults.clear(); }
+    if (['web_resumed', 'web_status_check'].includes(record.event)) { lastActivity = ''; displayedResults.clear(); }
     const entry = activity(record);
     if (!entry || entry.text === lastActivity || (entry.resultKey && displayedResults.has(entry.resultKey))) continue;
     lastActivity = entry.text;
@@ -113,6 +127,36 @@ function render(job, records = []) {
   if (records.length) $('#logs').scrollTop = $('#logs').scrollHeight;
   updateControls();
 }
+
+function renderProviderState(job) {
+  const result = job.result ?? {};
+  const confirmed = result.stateConfirmed === true && result.currentStep;
+  const source = confirmed ? result : job.providerState;
+  const step = source?.currentStep ?? result.lastKnownStep;
+  const checkedAt = source?.stateCheckedAt ?? result.lastKnownAt;
+  const time = checkedAt ? ` · Received ${new Date(checkedAt).toLocaleString()}` : '';
+  $('#verification-state').textContent = confirmed ? `Last provider response: ${step}${time}`
+    : step ? `Current verification state is unconfirmed. Last known: ${step}${time}`
+      : 'Current verification state is unconfirmed. No validated provider response is available.';
+  const codes = [
+    source?.errorIds?.length ? `${confirmed ? 'Provider' : 'Last confirmed'} error codes: ${source.errorIds.join(', ')}` : '',
+    source?.rejectionReasons?.length ? `${confirmed ? 'Provider' : 'Last confirmed'} rejection reasons: ${source.rejectionReasons.join(', ')}` : '',
+    result.responseErrorIds?.length ? `API response codes (state unconfirmed): ${result.responseErrorIds.join(', ')}` : '',
+    result.responseRejectionReasons?.length ? `API response reasons (state unconfirmed): ${result.responseRejectionReasons.join(', ')}` : '',
+  ].filter(Boolean).join(' · ');
+  $('#provider-codes').textContent = codes;
+  $('#provider-codes').hidden = !codes;
+}
+
+function renderAttempts(attempts = []) {
+  $('#attempts').replaceChildren();
+  for (const attempt of attempts) {
+    const item = document.createElement('li');
+    item.textContent = `${new Date(attempt.finishedAt).toLocaleString()} · ${attempt.operation === 'status' ? 'Status check' : 'Verification task'} · ${resultLabel(attempt.result ?? {})}`;
+    $('#attempts').append(item);
+  }
+  $('#attempt-history summary').textContent = `Request history (${attempts.length})`;
+}
 function selectJob(job) {
   if (selectedId !== job.id) {
     selectionVersion++;
@@ -121,6 +165,7 @@ function selectJob(job) {
     displayedResults.clear();
     $('#logs').replaceChildren();
     $('#log-count').textContent = '0 events';
+    renderAttempts();
   }
   selectedId = job.id;
   try { sessionStorage.setItem('workbench-selected-job', selectedId); } catch { /* optional */ }
@@ -135,6 +180,11 @@ function clearSelection() {
   displayedResults.clear();
   try { sessionStorage.removeItem('workbench-selected-job'); } catch { /* optional */ }
   $('#selected-job').textContent = '';
+  $('#job-summary').textContent = '';
+  $('#verification-state').textContent = '';
+  $('#provider-codes').textContent = '';
+  $('#provider-codes').hidden = true;
+  renderAttempts();
   $('#job-state').textContent = 'Not started';
   delete $('#job-state').dataset.state;
   $('#log-count').textContent = '0 events';
@@ -157,7 +207,8 @@ function renderQueue(queue) {
     const id = document.createElement('span');
     id.textContent = job.id;
     const state = document.createElement('span');
-    state.textContent = states[job.state] + (job.state === 'queued' ? ` · Position ${job.queuePosition}` : '');
+    state.textContent = (job.finishedAt && job.result ? resultLabel(job.result) : states[job.state])
+      + (job.state === 'queued' ? ` · Position ${job.queuePosition}` : '');
     button.append(id, state);
     button.addEventListener('click', () => { selectJob(job); renderQueue(queue); requestPoll(); });
     item.append(button);
@@ -177,6 +228,7 @@ async function poll() {
   try {
     const requestedVersion = selectionVersion;
     const queue = await api('/api/jobs');
+    if (queue.storageError) error(queue.storageError);
     if (selectionVersion !== requestedVersion) return;
     queueLoaded = true;
     queueActive = queue.jobs.some(job => !job.finishedAt);
@@ -193,11 +245,14 @@ async function poll() {
       // Finished tasks only need a final read for logs that have not been shown.
       if (!job.finishedAt || job.lastSequence > cursor) {
         const data = await api(`/api/jobs/${id}?after=${cursor}`);
-        if (selectedId === id && selectionVersion === version) render(data.job, data.events);
+        if (selectedId === id && selectionVersion === version) {
+          render(data.job, data.events);
+          renderAttempts(data.attempts);
+        }
       } else render(job);
     }
   } catch (reason) {
-    error(reason.status === 401 ? reason.message : `Progress connection lost: ${reason.message}。${queueActive || !queueLoaded ? 'Reconnecting.' : 'Refresh the page and try again.'}`);
+    error(`Progress connection lost: ${reason.message}。${queueActive || !queueLoaded ? 'Reconnecting.' : 'Refresh the page and try again.'}`);
   } finally {
     polling = false;
     // Keep a single timer while there is work; an idle page sends no requests.
@@ -242,66 +297,22 @@ async function taskAction(action) {
   } catch (reason) { error(reason.message); }
   finally { pendingActions.delete(id); updateControls(); requestPoll(); }
 }
-const FIRST_NAMES = [...new Set(`
-  James John Robert Michael William David Richard Joseph Thomas Daniel Matthew Anthony Andrew Joshua Ryan
-  Tyler Brandon Kevin Ethan Nathan Christopher Charles Mark Steven Paul Donald George Kenneth Edward Brian
-  Ronald Timothy Jason Jeffrey Gary Jacob Nicholas Eric Jonathan Stephen Larry Justin Scott Frank Benjamin
-  Gregory Samuel Raymond Patrick Alexander Jack Dennis Jerry Aaron Jose Adam Henry Douglas Zachary Peter
-  Kyle Walter Harold Jeremy Carl Keith Roger Gerald Christian Terry Sean Arthur Austin Noah Lawrence
-  Jesse Joe Bryan Billy Jordan Albert Dylan Bruce Willie Gabriel Alan Juan Logan Wayne Ralph Roy Eugene
-  Randy Vincent Russell Louis Philip Bobby Johnny Bradley Liam Mason Lucas Aiden Caleb Owen Connor Hunter
-  Isaac Luke Evan Gavin Chase Cole Blake Wyatt Carter Landon Colin Garrett Trevor Dustin Spencer Marcus
-  Mary Jennifer Linda Elizabeth Jessica Sarah Karen Emily Ashley Hannah Olivia Emma Madison Abigail
-  Samantha Rachel Lauren Megan Jeannette Grace Patricia Barbara Susan Nancy Lisa Betty Margaret Sandra
-  Kimberly Donna Michelle Dorothy Carol Amanda Melissa Deborah Stephanie Rebecca Sharon Laura Cynthia
-  Kathleen Amy Angela Shirley Anna Brenda Pamela Nicole Helen Katherine Christine Debra Catherine
-  Carolyn Janet Ruth Maria Heather Diane Virginia Julie Joyce Victoria Kelly Christina Joan Evelyn
-  Judith Andrea Cheryl Martha Frances Jacqueline Ann Gloria Teresa Kathryn Sara Janice Jean Alice
-  Julia Judy Beverly Denise Marilyn Amber Danielle Brittany Diana Natalie Sophia Isabella Ava Mia
-  Charlotte Amelia Harper Ella Chloe Lily Zoe Addison Aubrey Brooklyn Savannah Claire Audrey Leah
-  Allison Paige Morgan Kayla Taylor Alexis Sydney Haley Courtney Brianna Jasmine Erin Molly Vanessa
-  Caroline Natasha Jenna Kendra Monica Erica Tiffany Lindsey Kristen Valerie Bethany Shelby Mackenzie
-`.trim().split(/\s+/))];
-const LAST_NAMES = [...new Set(`
-  Smith Johnson Williams Brown Jones Garcia Miller Davis Wilson Anderson Taylor Thomas Moore Martin
-  Jackson Thompson White Harris Clark Lewis Robinson Walker Young Allen King Wright Scott Hill Green
-  Adams Baker Nelson Carter Mitchell Roberts Turner Phillips Campbell Parker Conroy Rodriguez Martinez
-  Hernandez Lopez Gonzalez Perez Lee Sanchez Ramirez Torres Flores Rivera Gomez Diaz Evans Edwards
-  Collins Stewart Morris Rogers Reed Cook Morgan Bell Murphy Bailey Cooper Richardson Cox Howard Ward
-  Peterson Gray James Watson Brooks Kelly Sanders Price Bennett Wood Barnes Ross Henderson Coleman
-  Jenkins Perry Powell Long Patterson Hughes Washington Butler Simmons Foster Bryant Alexander Russell
-  Griffin Hayes Myers Ford Hamilton Graham Sullivan Wallace Woods West Cole Jordan Owens Reynolds
-  Fisher Ellis Harrison Gibson McDonald Cruz Marshall Ortiz Gomez Murray Freeman Wells Webb Simpson
-  Stevens Tucker Porter Hunter Hicks Crawford Henry Boyd Mason Kennedy Warren Dixon Burns Gordon Shaw
-  Holmes Rice Robertson Hunt Black Daniels Palmer Mills Nichols Grant Knight Ferguson Rose Stone
-  Hawkins Dunn Perkins Hudson Spencer Gardner Stephens Payne Pierce Berry Matthews Arnold Wagner
-  Willis Ray Watkins Olson Carroll Duncan Snyder Hart Cunningham Bradley Lane Andrews Ruiz Harper Fox
-  Riley Armstrong Carpenter Weaver Greene Lawrence Elliott Chavez Sims Austin Peters Kelley Franklin
-  Lawson Fields Ryan Schmidt Carr Vasquez Castillo Wheeler Chapman Oliver Montgomery Richards
-  Williamson Johnston Banks Meyer Bishop McCoy Howell Morrison Hansen Fernandez Harvey Little Burton
-  Stanley George Jacobs Reid Fuller Lynch Dean Gilbert Garrett Romero Welch Larson Frazier Burke
-  Hanson Day Mendoza Moreno Bowman Medina Fowler Brewer Hoffman Carlson Silva Pearson Holland Douglas
-  Fleming Jensen Vargas Byrd Davidson Hopkins May Terry Herrera Wade Soto Walters Curtis Neal Caldwell
-`.trim().split(/\s+/))];
-const pick = list => list[Math.floor(Math.random() * list.length)];
-function randomBirthDate() {
-  // Random date for an age of roughly 18–26 years.
-  const now = new Date();
-  const start = new Date(now.getFullYear() - 26, now.getMonth(), now.getDate()).getTime();
-  const end = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate()).getTime();
-  const date = new Date(start + Math.random() * (end - start));
-  const pad = n => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-$('#random-fill').addEventListener('click', () => {
-  field('firstName').value = pick(FIRST_NAMES);
-  field('lastName').value = pick(LAST_NAMES);
-  field('birthDate').value = randomBirthDate();
+$('#fill-saved').addEventListener('click', async () => {
+  if (busy || fillingSaved) return;
+  fillingSaved = true;
+  error();
   updateControls();
+  try {
+    if (!connected && !await connect()) return;
+    const profile = await api('/api/form-defaults');
+    for (const name of ['firstName', 'lastName', 'birthDate']) field(name).value = profile[name];
+  } catch (reason) { error(reason.message); }
+  finally { fillingSaved = false; updateControls(); }
 });
 $('#cancel').addEventListener('click', () => taskAction('cancel'));
 $('#resume').addEventListener('click', () => taskAction('resume'));
 $('#delete').addEventListener('click', () => taskAction('delete'));
+$('#check-status').addEventListener('click', () => taskAction('check-status'));
 function connect() {
   if (connecting) return connecting;
   connecting = (async () => {
@@ -309,20 +320,21 @@ function connect() {
       const session = await api('/api/session');
       token = session.token;
       connected = true;
-      field('password').required = false;
       setConn('ok', 'Service connected');
       error();
       updateControls();
       requestPoll();
       return true;
     } catch (reason) {
-      if (reason.status === 401) setConn('auth', 'Enter access password'); else setConn('error', 'Service disconnected');
-      if (reason.status !== 401 || field('password').value) error(reason.message);
+      connected = false;
+      token = undefined;
+      setConn('error', 'Service disconnected');
+      error(reason.message);
+      updateControls();
       return false;
     } finally { connecting = undefined; }
   })();
   return connecting;
 }
-field('password').addEventListener('change', () => { if (field('password').value) void connect(); });
 updateControls();
 void connect();

@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { loadConfig } from './core/config.js';
 import { AutomationError } from './core/errors.js';
 import { runWorkflow } from './core/workflow.js';
+import { responseDetails } from './core/response-details.js';
 
 const help = `Usage: npm start -- [--config <path>] [--submit | --status] [--file <path> | --url <url>]
 
@@ -57,6 +58,7 @@ async function main() {
 
 main().catch(error => {
   process.stderr.write(`${JSON.stringify({ status: 'failed',
+    stage: error.stage, stateConfirmed: false, ...responseDetails(error),
     code: error instanceof AutomationError ? error.code : 'STARTUP_ERROR',
     message: error instanceof AutomationError ? error.message : 'Startup or result save failed; check arguments, configuration and directory permissions',
   })}\n`);

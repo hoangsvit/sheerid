@@ -22,8 +22,24 @@ export function httpResponseError(response, {
   return error;
 }
 
+export async function readResponseError(response, { parseErrorBody, ...options } = {}) {
+  const error = httpResponseError(response, options);
+  error.stateConfirmed = false;
+  if (parseErrorBody) {
+    const body = await response.json().catch(() => null);
+    Object.assign(error, parseErrorBody(body));
+    if (error.terminal) {
+      error.message = error.stateConfirmed
+        ? `API returned HTTP ${response.status}; the provider reported a verification error. Review the provider error codes and verification page instructions`
+        : `API returned HTTP ${response.status} with error diagnostics; verification state is unconfirmed. Review the API response codes and verification page instructions`;
+    }
+  }
+  await response.body?.cancel().catch(() => {});
+  return error;
+}
+
 // Network operations deliberately have no automatic retry, including uploads and step changes.
-export async function fetchData(url, { method = 'GET', json, bytes, mimeType, timeoutMs, signal, binary = false } = {}) {
+export async function fetchData(url, { method = 'GET', json, bytes, mimeType, timeoutMs, signal, binary = false, parseErrorBody } = {}) {
   const deadline = AbortSignal.timeout(timeoutMs);
   const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
   try {
@@ -35,15 +51,7 @@ export async function fetchData(url, { method = 'GET', json, bytes, mimeType, ti
       body: binary ? bytes : json === undefined ? undefined : JSON.stringify(json),
     });
     if (!response.ok) {
-      const error = httpResponseError(response);
-      if (method === 'GET' && response.status === 429) {
-        // 429 can also mean a permanent program/consumer limit. Even when an
-        // intermediary adds Retry-After, never retry a terminal error response.
-        const body = await response.json().catch(() => null);
-        error.terminal = body?.currentStep === 'error' || (Array.isArray(body?.errorIds) && body.errorIds.length > 0);
-      }
-      await response.body?.cancel().catch(() => {});
-      throw error;
+      throw await readResponseError(response, { parseErrorBody });
     }
     if (binary) {
       await response.body?.cancel().catch(() => {});

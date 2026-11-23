@@ -8,29 +8,35 @@
   <div class="workspace">
     <form id="task-form" autocomplete="off">
       <fieldset id="form-fields">
-        <section class="card"><div class="section-title"><h2>Verification Task</h2><button id="random-fill" type="button" class="secondary small">Fill sample data</button></div>
+        <section class="card"><div class="section-title"><h2>Verification Task</h2><button id="fill-saved" type="button" class="secondary small">Fill saved data</button></div>
           <label>Verification URL<input name="url" type="url" required placeholder="Paste the full verification URL containing verificationId"></label>
           <div class="grid"><label>First name<input name="firstName" required maxlength="150"></label><label>Last name<input name="lastName" required maxlength="150"></label></div>
           <label>Date of birth<input name="birthDate" type="date" required min="1900-01-01"></label>
           <label>Proxy<input name="proxy" placeholder="Leave blank for a direct connection; supports host:port:username:password"></label>
-          <label>Access password<input name="password" type="password" required autocomplete="current-password" placeholder="Enter access password"></label>
         </section>
         <div class="actions"><button id="start" type="submit" class="primary" disabled>Add to queue</button><button type="reset" class="secondary">Clear form</button></div>
       </fieldset>
       <p id="form-error" class="error" role="alert" hidden></p>
       <p class="privacy">Other settings come from the config file. A blank proxy uses a direct connection.</p>
     </form>
-    <aside class="progress card"><div class="progress-heading"><h2>Task Progress</h2><span id="job-state" class="badge">Not started</span></div>
+    <aside class="progress card"><div class="progress-heading"><h2>Saved jobs</h2><span id="job-state" class="badge">Not started</span></div>
+      <p class="hint">History is saved across service restarts. Select a job to review or check its current status.</p>
       <p id="queue-summary" class="hint">Loading queue</p>
       <ul id="jobs" aria-label="Task queue"></ul>
       <p id="selected-job" class="hint"></p>
+      <p id="job-summary" class="hint" aria-live="polite"></p>
+      <p id="verification-state" class="hint" aria-live="polite"></p>
+      <p id="provider-codes" class="hint" hidden></p>
+      <p id="check-hint" class="hint">Check status reads the existing verification once, without submitting information or documents.</p>
       <div class="task-actions">
+        <button id="check-status" class="secondary" type="button" hidden>Check status</button>
         <button id="cancel" class="secondary cancel" type="button" disabled>Stop task</button>
         <button id="resume" class="secondary cancel" type="button" hidden>Resume task</button>
         <button id="delete" class="secondary cancel" type="button" hidden>Delete selected task</button>
       </div>
       <div class="log-heading"><h3>Activity log</h3><span id="log-count">0 events</span></div>
       <ol id="logs" aria-label="Activity log" aria-live="polite"><li class="empty">Task progress will appear here after it starts.</li></ol>
+      <details id="attempt-history"><summary>Request history</summary><ol id="attempts"></ol></details>
     </aside>
   </div>
   <footer>Verification Workbench / Local workbench<span>Tasks run in queue order</span></footer>

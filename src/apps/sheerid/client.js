@@ -1,6 +1,7 @@
 import { fetchData } from '../../core/http.js';
 import { AutomationError, requireValue } from '../../core/errors.js';
-import { isRecord } from '../../core/config.js';
+import { parseVerification, verificationErrorDetails } from './verification-state.js';
+export { parseVerification } from './verification-state.js';
 
 export function verificationIdFromUrl(value) {
   const url = new URL(value);
@@ -13,29 +14,16 @@ export function verificationIdFromUrl(value) {
   return id.toLowerCase();
 }
 
-export function parseVerification(body, verificationId) {
-  const errorIds = body?.errorIds ?? [];
-  const rejectionReasons = body?.rejectionReasons ?? [];
-  if (!isRecord(body) || typeof body.verificationId !== 'string'
-    || body.verificationId.toLowerCase() !== verificationId
-    || typeof body.currentStep !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(body.currentStep)
-    || !Array.isArray(errorIds) || errorIds.length > 50
-    || !errorIds.every(code => typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(code))
-    || !Array.isArray(rejectionReasons) || rejectionReasons.length > 50
-    || !rejectionReasons.every(code => typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(code))) {
-    throw new AutomationError('API_RESPONSE_INVALID', 'Invalid API fields or mismatched verification ID; workflow stopped');
-  }
-  return { currentStep: body.currentStep, errorIds, rejectionReasons };
-}
-
 export function createVerificationClient(config, signal) {
   const verificationId = verificationIdFromUrl(config.url);
   const base = `https://my.sheerid.com/rest/v2/verification/${verificationId}`;
   async function request(method, step, json) {
     const body = await fetchData(step ? `${base}/step/${step}` : base, {
       method, json, signal, timeoutMs: config.timeouts.apiMs,
+      parseErrorBody: body => verificationErrorDetails(body, verificationId),
     });
-    return { body, state: parseVerification(body, verificationId) };
+    return { body, state: { ...parseVerification(body, verificationId),
+      stateConfirmed: true, stateCheckedAt: new Date().toISOString() } };
   }
   return {
     verificationId,

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -14,7 +14,7 @@ const assets = new Map([
 ]);
 
 export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
-  password = 'local-dev-only', configFile = resolve('config/sheerid.local.json'), workflow } = {}) {
+  configFile = resolve('config/sheerid.local.json'), workflow } = {}) {
   requireValue(['127.0.0.1', '0.0.0.0'].includes(host), 'Invalid web listener host');
   let published;
   if (publicOrigin) {
@@ -22,12 +22,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
     requireValue(published.protocol === 'https:' && !published.username && !published.password
       && published.pathname === '/' && !published.search && !published.hash, 'Public origin must be an HTTPS domain');
   }
-  requireValue(typeof password === 'string' && password.length > 0, 'Access password cannot be empty');
   requireValue(host !== '0.0.0.0' || published, 'Public listening requires an HTTPS public origin');
-  const digest = value => createHash('sha256').update(value).digest();
-  const expectedPassword = digest(password);
-  const sessionKey = randomBytes(32).toString('hex');
-  const expectedSession = digest(sessionKey);
   const token = randomBytes(32).toString('hex');
   const jobs = new WebJobs({ configFile, workflow });
   let origin;
@@ -36,6 +31,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
       if (response.headersSent) { response.destroy(); return; }
       const status = error.code === 'JOB_NOT_FOUND' ? 404
         : ['SERVER_STOPPING', 'JOB_ACTIVE'].includes(error.code) ? 409
+          : error.code === 'STATUS_COOLDOWN' ? 429 : error.code === 'STORAGE_ERROR' ? 503
           : error.code === 'FORBIDDEN' ? 403 : error.code === 'BODY_TOO_LARGE' ? 413
             : error instanceof AutomationError ? 400 : 500;
       json(response, status, { error: { code: error instanceof AutomationError ? error.code : 'WEB_ERROR',
@@ -76,18 +72,25 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
       response.end(await readFile(new URL(`./public/${filename}`, import.meta.url)));
       return;
     }
-    const cookie = (request.headers.cookie ?? '').split(';').map(item => item.trim())
-      .find(item => item.startsWith('workbench-session='))?.slice('workbench-session='.length) ?? '';
-    const passwordValid = timingSafeEqual(expectedPassword, digest(request.headers['x-web-password'] ?? ''));
-    const sessionValid = timingSafeEqual(expectedSession, digest(cookie));
-    if (!passwordValid && !sessionValid) {
-      json(response, 401, { error: { code: 'UNAUTHORIZED', message: 'Enter the correct access password' } });
-      return;
-    }
     authorize(request, request.method !== 'GET');
     if (request.method === 'GET' && url.pathname === '/api/session') {
-      if (passwordValid) response.setHeader('Set-Cookie', `workbench-session=${sessionKey}; Path=/; HttpOnly; SameSite=Strict${published ? '; Secure' : ''}`);
       json(response, 200, { token });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/form-defaults') {
+      const { data = {} } = await jobs.readConfig();
+      const profile = {};
+      for (const key of ['firstName', 'lastName']) {
+        requireValue(typeof data?.[key] === 'string' && data[key].trim().length > 0 && data[key].trim().length <= 150,
+          `Provide data.${key} in the configuration to fill saved details`);
+        profile[key] = data[key].trim();
+      }
+      const date = data?.birthDate;
+      const timestamp = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T00:00:00Z`) : NaN;
+      requireValue(Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === date
+        && timestamp < Date.now() && Number(date.slice(0, 4)) >= 1900,
+      'Provide a valid data.birthDate in YYYY-MM-DD format to fill saved details');
+      json(response, 200, { ...profile, birthDate: date });
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/jobs') {
@@ -106,7 +109,7 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
       json(response, 202, { job });
       return;
     }
-    const jobRoute = url.pathname.match(/^\/api\/jobs\/([a-f\d]{24})(\/(?:cancel|resume))?$/i);
+    const jobRoute = url.pathname.match(/^\/api\/jobs\/([a-f\d]{24})(\/(?:cancel|resume|check-status))?$/i);
     if (jobRoute && request.method === 'DELETE' && !jobRoute[2]) {
       json(response, 200, jobs.remove(jobRoute[1]));
       return;
@@ -118,8 +121,10 @@ export function createWebServer({ port = 8787, host = '127.0.0.1', publicOrigin,
       return;
     }
     if (jobRoute?.[2] && request.method === 'POST') {
-      json(response, 200, { job: jobRoute[2].toLowerCase() === '/resume'
-        ? jobs.resume(jobRoute[1]) : jobs.cancel(jobRoute[1]) });
+      const action = jobRoute[2].toLowerCase();
+      const job = action === '/check-status' ? await jobs.checkStatus(jobRoute[1])
+        : action === '/resume' ? jobs.resume(jobRoute[1]) : jobs.cancel(jobRoute[1]);
+      json(response, action === '/check-status' ? 202 : 200, { job });
       return;
     }
     json(response, 404, { error: { code: 'NOT_FOUND', message: 'Page or endpoint not found' } });
@@ -169,8 +174,7 @@ if (isMainModule(import.meta.url)) {
   const port = Number(values.port);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Port must be an integer between 1024 and 65535');
   const app = createWebServer({ port, host: process.env.WORKBENCH_WEB_HOST || '127.0.0.1',
-    publicOrigin: process.env.WORKBENCH_WEB_PUBLIC_ORIGIN,
-    password: process.env.WORKBENCH_WEB_PASSWORD });
+    publicOrigin: process.env.WORKBENCH_WEB_PUBLIC_ORIGIN });
   const shutdown = () => { void app.close().catch(() => { process.exitCode = 1; }); };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);

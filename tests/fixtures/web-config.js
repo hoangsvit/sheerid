@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, unlink, rmdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,9 +13,9 @@ export async function webConfig(t) {
     browser: { headless: true, keepOpen: false, autoFill: true, locale: 'zh-CN' },
     document: { path: '', url: 'http://localhost:3000/proof.png?page=2' },
     timeouts: { readyMs: 180000 }, interaction: { keyDelayMs: { min: 50, max: 100 } },
-    selectors: { email: ['#email'] }, artifactsDir: '.runs',
+    selectors: { email: ['#email'] }, artifactsDir: join(directory, 'runs'),
   };
   await writeFile(configFile, JSON.stringify(raw));
-  t.after(async () => { await unlink(configFile); await rmdir(directory); });
+  t.after(async () => { await rm(directory, { recursive: true, force: true }); });
   return { configFile, raw };
 }

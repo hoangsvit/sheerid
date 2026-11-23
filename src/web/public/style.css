@@ -401,7 +401,12 @@ button:disabled { opacity: .4; cursor: not-allowed; filter: saturate(.5) }
   box-shadow: 0 0 22px -8px rgba(34, 211, 238, .7), inset 3px 0 0 var(--cyan);
 }
 #jobs button span:first-child { font-family: var(--mono); overflow-wrap: anywhere }
-#jobs button span:last-child { color: var(--text-soft); font-size: 11px; white-space: nowrap }
+#jobs button span:last-child { color: var(--text-soft); font-size: 11px; text-align: right; overflow-wrap: anywhere }
+#attempt-history { margin-top: 20px; color: var(--text-soft); font-size: 12px; }
+#attempt-history summary { cursor: pointer; padding: 8px 0; }
+#attempts { padding-left: 20px; line-height: 1.7; }
+#attempts li { padding: 6px 0; overflow-wrap: anywhere; }
+#provider-codes { overflow-wrap: anywhere; }
 #selected-job { font-family: var(--mono); font-size: 11px; color: var(--text-mute); overflow-wrap: anywhere; margin: 0 0 14px }
 #selected-job:empty { display: none }
 

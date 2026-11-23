@@ -6,6 +6,7 @@ import { AutomationError, requireValue } from './errors.js';
 import { createLogger } from './logger.js';
 import { withTaskLock, saveResult } from './storage.js';
 import { withNetwork } from './network.js';
+import { responseDetails } from './response-details.js';
 
 export function runAutomation(config, options = {}) {
   return withNetwork(config, () => executeAutomation(config, options));
@@ -60,6 +61,7 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
     });
     return {
       status: documentResult.status, code: documentResult.code, message: documentResult.message,
+      ...responseDetails(documentResult),
       currentStep: documentResult.currentStep, errorIds: documentResult.errorIds,
       rejectionReasons: documentResult.rejectionReasons, uploadAttempt: documentResult.uploadAttempt,
       submissionUncertain: documentResult.submissionUncertain,
@@ -83,7 +85,7 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
           ? await continueAfterSubmission(decision.outcome) : { ...decision.outcome, stage });
         return result; // finally persists the result and releases the lock without a browser.
       }
-      log('preflight_ready', { stage, currentStep: decision.currentStep, errorIds: decision.errorIds });
+      log('preflight_ready', { stage, ...responseDetails(decision) });
     }
     if (!manual) {
       stage = 'validate_input';
@@ -144,11 +146,14 @@ async function executeLockedAutomation(config, { submit = false, signal, afterSu
       : error.code === 'HUMAN_VERIFICATION_REQUIRED' ? 'human_verification_required' : 'failed',
       code: signal?.aborted ? 'CANCELLED' : error instanceof AutomationError ? error.code
         : stage === 'preflight' ? 'PREFLIGHT_FAILED' : 'BROWSER_ERROR',
-      message: error instanceof AutomationError ? error.message : undefined, stage });
+      message: error instanceof AutomationError ? error.message : undefined,
+      stateConfirmed: false, ...responseDetails(error), stage });
     if (attempted && !pageFailure && !signal?.aborted && afterSubmit && !documentHandoffStarted) {
       try { result = envelope(await continueAfterSubmission({ status: 'submission_unknown' })); }
-      catch { result = envelope({ status: 'failed', code: 'FOLLOW_UP_FAILED', submissionUncertain: true,
-        message: 'Status polling could not continue after submission; the final server result remains unconfirmed' }); }
+      catch (error) { result = envelope({ status: 'failed', code: error instanceof AutomationError ? error.code : 'FOLLOW_UP_FAILED',
+        submissionUncertain: true, stateConfirmed: false, ...responseDetails(error),
+        message: error instanceof AutomationError ? error.message
+          : 'Status polling could not continue after submission; the final server result remains unconfirmed' }); }
     }
   } finally {
     try {

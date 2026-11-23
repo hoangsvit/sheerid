@@ -5,8 +5,7 @@ import { createWebServer } from '../src/web/server.js';
 import { createLogger } from '../src/core/logger.js';
 import { webConfig } from './fixtures/web-config.js';
 
-const fetch = (url, options = {}) => globalThis.fetch(url, { ...options,
-  headers: { 'X-Web-Password': 'local-dev-only', ...options.headers } });
+const fetch = (url, options = {}) => globalThis.fetch(url, options);
 
 const url = 'https://services.sheerid.com/verify/aaaaaaaaaaaaaaaaaaaaaaaa/?verificationId=bbbbbbbbbbbbbbbbbbbbbbbb';
 const input = (extra = {}) => ({ url, firstName: 'PrivateFirst', lastName: 'PrivateLast', birthDate: '2000-01-02', ...extra });
@@ -38,6 +37,26 @@ test('Web serves assets, protects writes and does not expose saved settings', as
   assert.equal((await request('/api/jobs', input(), { Origin: 'https://evil.example' })).status, 403);
   assert.equal((await request('/api/jobs', input(), { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
   assert.equal((await fetch(origin + '/config/sheerid.local.json')).status, 404);
+});
+
+test('Saved form defaults work without login, expose only name and birth date, and read fresh configuration', async t => {
+  const { origin, configFile, raw, app } = await fixture(t);
+  const path = `${origin}/api/form-defaults`;
+  assert.equal((await globalThis.fetch(path)).status, 200);
+  assert.equal((await fetch(path, { headers: { Origin: 'https://evil.example' } })).status, 403);
+  const response = await fetch(path);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { firstName: 'Saved', lastName: 'Person', birthDate: '1999-01-01' });
+  Object.assign(raw.data, { firstName: 'Hoài An', lastName: 'Nguyễn', birthDate: '2001-05-06' });
+  await writeFile(configFile, JSON.stringify(raw));
+  assert.deepEqual(await (await fetch(path)).json(), { firstName: 'Hoài An', lastName: 'Nguyễn', birthDate: '2001-05-06' });
+  delete raw.data.firstName;
+  await writeFile(configFile, JSON.stringify(raw));
+  const missing = await fetch(path);
+  assert.equal(missing.status, 400);
+  assert.match((await missing.json()).error.message, /data.firstName/);
+  assert.equal(app.jobs.list().jobs.length, 0);
 });
 
 test('Web uses the five request fields with fresh settings and only the entered proxy', async t => {
