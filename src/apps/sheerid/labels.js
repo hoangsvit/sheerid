@@ -30,9 +30,19 @@ export function countryChoice(country, locales) {
     if (matches.length === 1) [code] = matches;
   }
   const labels = [...new Set([input, ...(code ? names.map(display => display.of(code)) : [])].filter(Boolean))];
-  // Country choices are a finite list: clear the filter instead of searching an
-  // English name against translated options. Wait for a real matching option.
-  return { value: code ?? input, label: labels[0], labels, searchText: '' };
+  // Country menus can virtualize their long lists. Clearing the search may leave
+  // the target country outside the rendered options, even when it is supported.
+  // Search with the page's first localized country name instead of an English
+  // name on a translated form. Other localized labels remain exact-match options.
+  const localizedLabel = code
+    ? names.map(display => display.of(code)).find(name => name && name.toUpperCase() !== code)
+    : undefined;
+  return {
+    value: code ?? input, label: labels[0], labels,
+    searchText: localizedLabel ?? input,
+    countryCode: code,
+    allowCountryFlagPrefix: true,
+  };
 }
 
 export function monthChoice(month, locales) {

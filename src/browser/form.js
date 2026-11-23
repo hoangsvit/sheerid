@@ -110,7 +110,7 @@ export async function waitForFields(page, selectors, names, { timeoutMs, signal,
 
 // Native selects and Downshift-style comboboxes require different interactions.
 // Custom controls must select a real option; filling their text alone does not commit a value.
-export async function selectChoice(locator, { value, label, labels = [label], searchText, timeoutMs, signal, field, allowLocationSuffix = false, normalizeLabelSeparators = false, retrySearch = false, interaction, assertReady, onPending, isSelectionCommitted }) {
+export async function selectChoice(locator, { value, label, labels = [label], searchText, timeoutMs, signal, field, allowLocationSuffix = false, normalizeLabelSeparators = false, retrySearch = false, countryCode, allowCountryFlagPrefix = false, interaction, assertReady, onPending, isSelectionCommitted }) {
   checkWaiting(locator.page(), signal);
   await assertReady?.();
   const deadline = Date.now() + timeoutMs;
@@ -153,6 +153,20 @@ export async function selectChoice(locator, { value, label, labels = [label], se
       candidate = scope.getByRole('option', { name: locationLabelPattern(label) }).or(
         options.filter({ has: locator.page().getByText(label, { exact: true }) }),
       ).filter({ visible: true });
+      count = await candidate.count();
+    }
+    if (count === 0 && allowCountryFlagPrefix) {
+      // Some accessible names include a country flag before the actual label.
+      // Match only a two-regional-indicator flag plus an exact country name.
+      candidate = scope.getByRole('option', { name: flagPrefixedLabelsPattern(labels) }).filter({ visible: true });
+      count = await candidate.count();
+    }
+    if (count === 0 && countryCode && /^[A-Z]{2}$/.test(countryCode)) {
+      // Match an explicit two-letter ISO code instead of guessing from a
+      // partially matched translated label.
+      const attributes = ['data-country-code', 'data-iso-code', 'data-value', 'value'];
+      candidate = scope.locator(attributes.map(attr =>
+        `[role="option"][${attr}="${countryCode}"]`).join(',')).filter({ visible: true });
       count = await candidate.count();
     }
     if (count > 1) {
@@ -305,6 +319,11 @@ async function choiceScope(locator, options) {
 async function choiceBusy(locator, scope, options) {
   return await locator.evaluate(element => Boolean(element.closest('[aria-busy="true"]')), undefined, options)
     || await scope.locator(':scope[aria-busy="true"], [aria-busy="true"], [role="progressbar"]').filter({ visible: true }).count() > 0;
+}
+
+function flagPrefixedLabelsPattern(labels) {
+  const exact = exactLabelsPattern(labels).source;
+  return new RegExp(`^(?:\\p{Regional_Indicator}{2}\\s+)?${exact.slice(1, -1)}$`, 'iu');
 }
 
 function exactLabelsPattern(labels) {
